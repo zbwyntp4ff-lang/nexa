@@ -1,0 +1,16 @@
+:{$PORT:8080} {
+	encode gzip
+
+	# Backend health + API (includes SSE chat stream and build preview)
+	handle /health {
+		reverse_proxy 127.0.0.1:{$NEXA_API_PORT:8420}
+	}
+	handle /api/* {
+		reverse_proxy 127.0.0.1:{$NEXA_API_PORT:8420}
+	}
+
+	# Next.js UI
+	handle {
+		reverse_proxy 127.0.0.1:{$NEXA_WEB_PORT:3000}
+	}
+}

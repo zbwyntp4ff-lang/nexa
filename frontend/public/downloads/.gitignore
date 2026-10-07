@@ -1,0 +1,4 @@
+# Place the Windows installer here as NEXA-Setup.exe (copied by scripts/publish-download.ps1).
+# Served at https://YOUR_DOMAIN/downloads/NEXA-Setup.exe
+*
+!.gitignore
