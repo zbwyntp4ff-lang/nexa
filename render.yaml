@@ -1,0 +1,52 @@
+# Render Blueprint — Docker Web Service for NEXA (Free tier).
+# Railway config (railway.toml) remains the fallback; do not remove it.
+# Secrets use sync:false — set values in the Render Dashboard only.
+
+services:
+  - type: web
+    name: nexa
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    # Free tier: no persistent disk. JSON stores under /app/data are ephemeral.
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: AI_PROVIDER
+        value: openai
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: AUTH_SINGLE_USER
+        value: "false"
+      - key: AUTH_BOOTSTRAP_FIRST_OWNER
+        value: "true"
+      - key: AUTH_SKIP_EMAIL_VERIFICATION
+        value: "true"
+      - key: AUTH_COOKIE_SECURE
+        value: "true"
+      - key: AUTH_COOKIE_SAMESITE
+        value: lax
+      - key: MEMORY_STORE_PATH
+        value: data/memory_store.json
+      - key: AUTH_STORE_PATH
+        value: data/auth_store.json
+      - key: BILLING_STORE_PATH
+        value: data/billing_store.json
+      - key: AGENT_WORKSPACE_DIR
+        value: agent_workspace
+      - key: WEB_SEARCH_PROVIDER
+        value: duckduckgo
+      - key: REQUEST_TIMEOUT_SECONDS
+        value: "90"
+      # Set to https://<your-service>.onrender.com after first deploy (same origin).
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: BILLING_PUBLIC_BASE_URL
+        sync: false
