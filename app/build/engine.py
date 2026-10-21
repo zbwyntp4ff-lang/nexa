@@ -62,6 +62,7 @@ class BuildEngine:
         *,
         conversation_id: str | None = None,
         project_id: str | None = None,
+        user_id: str | None = None,
     ) -> BuildRunResponse:
         existing = None
         if project_id:
@@ -69,11 +70,21 @@ class BuildEngine:
         if existing is None and conversation_id:
             existing = store.get_project_for_conversation(conversation_id)
 
+        if existing and user_id and existing.user_id and existing.user_id != user_id:
+            return BuildRunResponse(
+                success=False,
+                mode="edit",
+                project_id=existing.project_id,
+                message="Project not found or access denied.",
+                error="access_denied",
+                status="FAILED",
+            )
+
         if existing and is_build_followup(message, has_active_project=True):
             return await self._edit(existing, message)
 
         if is_build_new_request(message):
-            return await self._create(message, conversation_id=conversation_id)
+            return await self._create(message, conversation_id=conversation_id, user_id=user_id)
 
         if existing:
             return await self._edit(existing, message)
@@ -86,7 +97,9 @@ class BuildEngine:
             status="FAILED",
         )
 
-    async def _create(self, message: str, *, conversation_id: str | None) -> BuildRunResponse:
+    async def _create(
+        self, message: str, *, conversation_id: str | None, user_id: str | None = None
+    ) -> BuildRunResponse:
         steps: list[BuildStep] = []
         project_id = str(uuid.uuid4())
         events.emit("BUILD_STARTED", project_id=project_id, detail="create")
@@ -264,6 +277,7 @@ class BuildEngine:
             title=plan.name,
             kind="static_web",
             conversation_id=conversation_id,
+            user_id=user_id,
             root_rel=root_rel,
             entry_file=plan.entry_file,
             files=list(file_contents.keys()),

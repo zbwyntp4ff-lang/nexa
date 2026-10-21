@@ -1,16 +1,25 @@
 """Web research endpoint — runs the real ResearchTool (search → fetch → extract → sources)."""
 from __future__ import annotations
+
 import time
+from typing import Annotated
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
+
 from app.api.deps import get_nexa_core
+from app.api.security_deps import require_user_when_enforced
+from app.auth.models import UserRecord
 from app.core.nexa_core import NexaCore
 from app.gateway.models import TaskKind
 from app.models.chat import ChatMessage, ChatRole
 from app.models.errors import NexaError, ProviderConfigurationError
-from app.tools.registry import get_default_tool_registry
 from app.tools.base import ToolResult
+from app.tools.registry import get_default_tool_registry
+
 router = APIRouter(prefix="/api/v1", tags=["research"])
+_Auth = Annotated[UserRecord | None, Depends(require_user_when_enforced)]
+
 class ResearchRequest(BaseModel):
     query: str = Field(..., description="What to search for on the web")
     max_results: int = Field(default=5, ge=1, le=20)
@@ -25,7 +34,7 @@ class ResearchResponse(BaseModel):
     sources: list[ResearchSourceResponse]
     skipped: list[str] = Field(default_factory=list)
 @router.post("/research", response_model=ResearchResponse)
-async def research(request: ResearchRequest) -> ResearchResponse:
+async def research(request: ResearchRequest, _user: _Auth = None) -> ResearchResponse:
     registry = get_default_tool_registry()
     tool = registry.get("web_research")
     result: ToolResult = await tool.execute(query=request.query, max_results=request.max_results)
@@ -64,7 +73,9 @@ def _build_context(sources: list[ResearchSourceResponse]) -> str:
     return "\n\n".join(f"[{i}] {s.title} ({s.url})\n{s.text}" for i, s in enumerate(sources, start=1))
 @router.post("/research/chat", response_model=ResearchChatResponse)
 async def research_chat(
-    request: ResearchChatRequest, core: NexaCore = Depends(get_nexa_core)
+    request: ResearchChatRequest,
+    core: NexaCore = Depends(get_nexa_core),
+    _user: _Auth = None,
 ) -> ResearchChatResponse:
     """Research mode: search the web, then ask the model to answer *from those
     sources only*, with numbered citations the frontend can render as links."""
@@ -75,14 +86,19 @@ async def research_chat(
     result: ToolResult = await tool.execute(query=request.message, max_results=request.max_results)
     if not result.success:
         raise NexaError(result.error or "Research failed.")
-    sources = [ResearchSourceResponse(**s) for s in result.output["sources"]]
+    sources = [ResearchSourceResponse(**s) for s in result.output.get("sources") or []]
+    if not sources and not (result.output.get("results") or []):
+        raise NexaError(
+            result.error
+            or "Web search returned no usable results. Try a different query or check connectivity."
+        )
     system = f"{_RESEARCH_SYSTEM_PROMPT}\n\n{_build_context(sources)}"
     try:
         from app.knowledge_core.composer import KnowledgeCoreComposer
 
-        core = KnowledgeCoreComposer().compose(request.message, task="research")
-        if core.text:
-            system = f"{system}\n\n{core.text}"
+        kc = KnowledgeCoreComposer().compose(request.message, task="research")
+        if kc.text:
+            system = f"{system}\n\n{kc.text}"
     except Exception:  # noqa: BLE001
         pass
     messages = [

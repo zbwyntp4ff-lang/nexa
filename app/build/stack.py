@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.build.templates import ProjectBlueprint, select_blueprint
+from app.build.templates import ProjectBlueprint, is_three_slug, select_blueprint
 from app.build.understanding import RequestUnderstanding
 
 
@@ -30,6 +30,23 @@ def select_stack(message: str, understanding: RequestUnderstanding) -> StackChoi
     """
     blueprint = select_blueprint(message)
     ptype = understanding.project_type
+
+    if is_three_slug(blueprint.slug_hint):
+        return StackChoice(
+            stack_id="threejs-cdn-game",
+            label="HTML / CSS / JS (Three.js CDN 3D)",
+            architecture="static_web",
+            dependencies=["three@0.160 (CDN)"],
+            commands=[],
+            tests=[
+                "entry HTML exists",
+                "main.js contains THREE / WebGLRenderer / game loop",
+                "scene.json present",
+                "preview serves index.html",
+            ],
+            blueprint=blueprint,
+            reason="3D веб-игра → Three.js CDN шаблон Build Engine",
+        )
 
     if ptype == "web_game" or blueprint.kind == "static_web" and blueprint.slug_hint in {
         "car-coins",

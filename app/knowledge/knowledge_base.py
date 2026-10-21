@@ -57,17 +57,29 @@ class KnowledgeBase:
     async def add_note(self, title: str, text: str, **scope) -> KnowledgeDocument:
         return await self.ingestion.ingest_note(title, text, **scope)
     # --- documents -------------------------------------------------------------
-    def list_documents(self, project_id: str | None = None) -> list[KnowledgeDocument]:
-        return self._documents.list(project_id=project_id)
-    def get_document(self, document_id: str) -> KnowledgeDocument:
+    def list_documents(
+        self, project_id: str | None = None, user_id: str | None = None
+    ) -> list[KnowledgeDocument]:
+        return self._documents.list(project_id=project_id, user_id=user_id)
+    def get_document(
+        self, document_id: str, *, user_id: str | None = None
+    ) -> KnowledgeDocument:
         doc = self._documents.get(document_id)
         if doc is None:
             raise KnowledgeDocumentNotFoundError(document_id)
+        if user_id is not None and doc.user_id != user_id:
+            raise KnowledgeDocumentNotFoundError(document_id)
         return doc
-    def delete_document(self, document_id: str) -> None:
-        self.get_document(document_id)  # 404s cleanly if missing
+    def delete_document(self, document_id: str, *, user_id: str | None = None) -> None:
+        self.get_document(document_id, user_id=user_id)  # 404s cleanly if missing/foreign
         self._vectors.delete_document(document_id)
         self._documents.delete(document_id)
+    def delete_user_data(self, user_id: str) -> int:
+        """Delete all documents and vectors owned by ``user_id``. Returns doc count."""
+        ids = self._documents.delete_user(user_id)
+        for doc_id in ids:
+            self._vectors.delete_document(doc_id)
+        return len(ids)
     # --- retrieval / RAG ---------------------------------------------------------
     def search(
         self,
@@ -75,6 +87,7 @@ class KnowledgeBase:
         *,
         project_id: str | None = None,
         conversation_id: str | None = None,
+        user_id: str | None = None,
         top_k: int | None = None,
         similarity_threshold: float | None = None,
         max_context_chars: int | None = None,
@@ -84,6 +97,7 @@ class KnowledgeBase:
             query,
             project_id=project_id,
             conversation_id=conversation_id,
+            user_id=user_id,
             top_k=top_k,
             similarity_threshold=similarity_threshold,
             max_context_chars=max_context_chars,

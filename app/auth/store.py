@@ -5,7 +5,14 @@ import json
 import threading
 from pathlib import Path
 
-from app.auth.models import EmailVerificationRecord, SessionRecord, UserRecord
+from app.auth.models import (
+    DeviceLoginRecord,
+    EmailVerificationRecord,
+    OAuthStateRecord,
+    PasskeyChallengeRecord,
+    SessionRecord,
+    UserRecord,
+)
 
 
 class AuthStore:
@@ -17,8 +24,12 @@ class AuthStore:
         self._users: dict[str, UserRecord] = {}
         self._by_email: dict[str, str] = {}
         self._by_username: dict[str, str] = {}
+        self._by_oauth: dict[str, str] = {}  # "provider:subject" -> user_id
         self._verifications: dict[str, EmailVerificationRecord] = {}
         self._sessions: dict[str, SessionRecord] = {}
+        self._devices: dict[str, DeviceLoginRecord] = {}
+        self._oauth_states: dict[str, OAuthStateRecord] = {}
+        self._passkey_challenges: dict[str, PasskeyChallengeRecord] = {}
         self._load()
 
     def _load(self) -> None:
@@ -28,17 +39,38 @@ class AuthStore:
             raw = json.loads(self._path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return
+        dirty = False
         for entry in raw.get("users", []):
             user = UserRecord.model_validate(entry)
+            # Repair emails corrupted by paste artifacts (e.g. leading "•").
+            from app.auth.service import normalize_email
+
+            cleaned = normalize_email(user.email)
+            if cleaned and cleaned != user.email:
+                user.email = cleaned
+                dirty = True
             self._users[user.id] = user
             self._by_email[user.email.lower()] = user.id
             self._by_username[user.username.lower()] = user.id
+            if user.oauth_provider and user.oauth_subject:
+                self._by_oauth[f"{user.oauth_provider}:{user.oauth_subject}"] = user.id
+        if dirty:
+            self._flush()
         for entry in raw.get("verifications", []):
             item = EmailVerificationRecord.model_validate(entry)
             self._verifications[item.id] = item
         for entry in raw.get("sessions", []):
             item = SessionRecord.model_validate(entry)
             self._sessions[item.id] = item
+        for entry in raw.get("devices", []):
+            item = DeviceLoginRecord.model_validate(entry)
+            self._devices[item.device_code] = item
+        for entry in raw.get("oauth_states", []):
+            item = OAuthStateRecord.model_validate(entry)
+            self._oauth_states[item.state] = item
+        for entry in raw.get("passkey_challenges", []):
+            item = PasskeyChallengeRecord.model_validate(entry)
+            self._passkey_challenges[item.challenge] = item
 
     def _flush(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -46,6 +78,11 @@ class AuthStore:
             "users": [u.model_dump(mode="json") for u in self._users.values()],
             "verifications": [v.model_dump(mode="json") for v in self._verifications.values()],
             "sessions": [s.model_dump(mode="json") for s in self._sessions.values()],
+            "devices": [d.model_dump(mode="json") for d in self._devices.values()],
+            "oauth_states": [s.model_dump(mode="json") for s in self._oauth_states.values()],
+            "passkey_challenges": [
+                c.model_dump(mode="json") for c in self._passkey_challenges.values()
+            ],
         }
         tmp = self._path.with_suffix(".tmp")
         tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -57,8 +94,34 @@ class AuthStore:
             self._users[user.id] = user
             self._by_email[user.email.lower()] = user.id
             self._by_username[user.username.lower()] = user.id
+            if user.oauth_provider and user.oauth_subject:
+                self._by_oauth[f"{user.oauth_provider}:{user.oauth_subject}"] = user.id
             self._flush()
         return user
+
+    def delete_user(self, user_id: str) -> bool:
+        """Remove the user and related auth artifacts (sessions already revoked separately)."""
+        with self._lock:
+            user = self._users.pop(user_id, None)
+            if user is None:
+                return False
+            self._by_email.pop(user.email.lower(), None)
+            self._by_username.pop(user.username.lower(), None)
+            if user.oauth_provider and user.oauth_subject:
+                self._by_oauth.pop(f"{user.oauth_provider}:{user.oauth_subject}", None)
+            self._verifications = {
+                vid: v for vid, v in self._verifications.items() if v.user_id != user_id
+            }
+            self._sessions = {
+                sid: s for sid, s in self._sessions.items() if s.user_id != user_id
+            }
+            self._flush()
+            return True
+
+    def get_user_by_oauth(self, provider: str, subject: str) -> UserRecord | None:
+        with self._lock:
+            uid = self._by_oauth.get(f"{provider}:{subject}")
+            return self._users.get(uid) if uid else None
 
     def get_user(self, user_id: str) -> UserRecord | None:
         with self._lock:
@@ -130,3 +193,72 @@ class AuthStore:
             session.revoked_at = utcnow()
             self._sessions[session_id] = session
             self._flush()
+
+    def revoke_all_sessions_for_user(self, user_id: str) -> int:
+        with self._lock:
+            from app.auth.models import utcnow
+
+            now = utcnow()
+            count = 0
+            for session in self._sessions.values():
+                if session.user_id == user_id and session.revoked_at is None:
+                    session.revoked_at = now
+                    count += 1
+            if count:
+                self._flush()
+            return count
+
+    # --- device login -----------------------------------------------------
+    def save_device(self, record: DeviceLoginRecord) -> DeviceLoginRecord:
+        with self._lock:
+            self._devices[record.device_code] = record
+            self._flush()
+        return record
+
+    def get_device(self, device_code: str) -> DeviceLoginRecord | None:
+        with self._lock:
+            return self._devices.get(device_code)
+
+    def get_device_by_user_code(self, user_code: str) -> DeviceLoginRecord | None:
+        code = user_code.strip().upper().replace(" ", "")
+        with self._lock:
+            for item in self._devices.values():
+                if item.user_code.replace("-", "") == code.replace("-", ""):
+                    return item
+        return None
+
+    # --- oauth state ------------------------------------------------------
+    def save_oauth_state(self, record: OAuthStateRecord) -> OAuthStateRecord:
+        with self._lock:
+            self._oauth_states[record.state] = record
+            self._flush()
+        return record
+
+    def pop_oauth_state(self, state: str) -> OAuthStateRecord | None:
+        with self._lock:
+            item = self._oauth_states.pop(state, None)
+            if item:
+                self._flush()
+            return item
+
+    # --- passkey challenges -----------------------------------------------
+    def save_passkey_challenge(self, record: PasskeyChallengeRecord) -> PasskeyChallengeRecord:
+        with self._lock:
+            self._passkey_challenges[record.challenge] = record
+            self._flush()
+        return record
+
+    def pop_passkey_challenge(self, challenge: str) -> PasskeyChallengeRecord | None:
+        with self._lock:
+            item = self._passkey_challenges.pop(challenge, None)
+            if item:
+                self._flush()
+            return item
+
+    def find_user_by_passkey(self, credential_id: str) -> UserRecord | None:
+        with self._lock:
+            for user in self._users.values():
+                for pk in user.passkeys:
+                    if pk.credential_id == credential_id:
+                        return user
+        return None

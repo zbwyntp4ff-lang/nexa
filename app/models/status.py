@@ -3,6 +3,13 @@ from __future__ import annotations
 from pydantic import BaseModel
 class HealthResponse(BaseModel):
     status: str = "ok"
+    version: str = "1.0.0"
+    # persistent | ephemeral — operators/UI use this for honest free-tier warnings.
+    storage_mode: str = "persistent"
+    environment: str | None = None
+    database_ok: bool | None = None
+    ai_provider: str | None = None
+    ollama_required: bool = False
 class StatusResponse(BaseModel):
     status: str
     app_name: str

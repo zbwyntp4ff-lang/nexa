@@ -18,6 +18,11 @@ export function MemorySection() {
   const [newContent, setNewContent] = React.useState("");
   const [newType, setNewType] = React.useState<(typeof MEMORY_TYPES)[number]>("long_term");
   const [saving, setSaving] = React.useState(false);
+  const [contradiction, setContradiction] = React.useState<{
+    existing_id: string;
+    existing_content: string;
+    reason: string;
+  } | null>(null);
   const load = React.useCallback(async (q: string) => {
     setLoading(true);
     setError(null);
@@ -34,12 +39,27 @@ export function MemorySection() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load("");
   }, [load]);
-  async function handleAdd() {
+  async function handleAdd(opts?: { force?: boolean; replace_id?: string }) {
     if (!newContent.trim()) return;
     setSaving(true);
     setError(null);
     try {
-      await createMemory({ content: newContent.trim(), type: newType });
+      const result = await createMemory({
+        content: newContent.trim(),
+        type: newType,
+        force: opts?.force,
+        replace_id: opts?.replace_id,
+      });
+      if (!result.saved && result.contradictions.length > 0) {
+        const first = result.contradictions[0];
+        setContradiction({
+          existing_id: first.existing_id,
+          existing_content: first.existing_content,
+          reason: first.reason,
+        });
+        return;
+      }
+      setContradiction(null);
       setNewContent("");
       await load(query);
     } catch (err) {
@@ -80,10 +100,40 @@ export function MemorySection() {
           aria-label={t("memory.newContent")}
           onKeyDown={(e) => e.key === "Enter" && handleAdd()}
         />
-        <Button onClick={handleAdd} disabled={saving || !newContent.trim()}>
+        <Button onClick={() => void handleAdd()} disabled={saving || !newContent.trim()}>
           {saving ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : t("memory.save")}
         </Button>
       </div>
+      {contradiction && (
+        <div className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+          <p className="font-medium">{t("memory.contradictionTitle")}</p>
+          <p className="text-xs text-muted-foreground">{contradiction.reason}</p>
+          <p className="text-xs">{t("memory.contradictionExisting")}: {contradiction.existing_content}</p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={saving}
+              onClick={() => void handleAdd({ replace_id: contradiction.existing_id })}
+            >
+              {t("memory.replaceOld")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={saving}
+              onClick={() => void handleAdd({ force: true })}
+            >
+              {t("memory.keepBoth")}
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setContradiction(null)}>
+              {t("memory.cancel")}
+            </Button>
+          </div>
+        </div>
+      )}
       <div className="relative">
         <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
         <Input

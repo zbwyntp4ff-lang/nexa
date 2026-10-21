@@ -1,52 +1,109 @@
-# Render Blueprint — Docker Web Service for NEXA (Free tier).
-# Railway config (railway.toml) remains the fallback; do not remove it.
-# Secrets use sync:false — set values in the Render Dashboard only.
+# Render Blueprint — FREE TEST only (Docker Web Service).
+# Compatible with: FastAPI (uvicorn) + Next.js (next start) + Caddy on $PORT.
+#
+# HARD LIMITS (Render Free):
+# - No persistent disk → /app/data is EPHEMERAL (accounts, sessions, memory, tokens
+#   wiped on sleep/restart/redeploy). Do NOT use as the only copy of real user data.
+# - Service sleeps after inactivity (cold start can take tens of seconds).
+# - ~512MB RAM — Playwright/Chromium may OOM; core chat/UI still OK.
+#
+# Do NOT put secrets in this file. Set sync:false vars in the Render Dashboard.
+# Do NOT deploy until the owner explicitly confirms.
+# Railway (railway.toml) remains an optional fallback with a volume.
 
 services:
   - type: web
-    name: nexa
+    name: nexa-free-test
     runtime: docker
     plan: free
     region: oregon
     dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /health
-    # Free tier: no persistent disk. JSON stores under /app/data are ephemeral.
     envVars:
       - key: ENVIRONMENT
         value: production
       - key: LOG_LEVEL
         value: INFO
+      # Smoke AI without cloud spend. For real replies set AI_PROVIDER=openai and
+      # OPENAI_API_KEY in the Dashboard (laptop Ollama is NOT reachable from Render).
       - key: AI_PROVIDER
-        value: openai
+        value: mock
       - key: OPENAI_MODEL
         value: gpt-4o-mini
       - key: OPENAI_API_KEY
         sync: false
+      # Auth stays ON. Skip email only because free test usually has no SMTP.
       - key: AUTH_SINGLE_USER
         value: "false"
       - key: AUTH_BOOTSTRAP_FIRST_OWNER
         value: "true"
       - key: AUTH_SKIP_EMAIL_VERIFICATION
         value: "true"
+      - key: AUTH_OWNER_EMAILS
+        sync: false
+      - key: EMAIL_PROVIDER
+        value: console
+      # Public API lockdown — do not set false on any internet-facing service.
+      - key: TOKENS_ENFORCE
+        value: "true"
+      - key: WORKFLOWS_ENABLED
+        value: "false"
       - key: AUTH_COOKIE_SECURE
         value: "true"
       - key: AUTH_COOKIE_SAMESITE
         value: lax
+      - key: AUTH_SESSION_TTL_SECONDS
+        value: "7776000"
+      # Explicit flag for operators / future UI warnings (ephemeral free tier).
+      - key: NEXA_STORAGE_MODE
+        value: ephemeral
+      - key: DATABASE_URL
+        value: sqlite:///data/nexa.db
+      - key: FREE_TIER_MODE
+        value: "true"
+      - key: FREE_TIER_DAILY_CHAT_CAP
+        value: "30"
+      - key: API_RATE_LIMIT_PER_MINUTE
+        value: "60"
       - key: MEMORY_STORE_PATH
         value: data/memory_store.json
       - key: AUTH_STORE_PATH
         value: data/auth_store.json
+      - key: TOKEN_STORE_PATH
+        value: data/token_store.json
+      - key: PROFILE_STORE_PATH
+        value: data/profile_store.json
       - key: BILLING_STORE_PATH
         value: data/billing_store.json
+      - key: PLUGIN_STORE_PATH
+        value: data/plugin_store.json
+      - key: PLUGIN_KEY_PATH
+        value: data/plugin.key
+      - key: PLUGIN_WORKSPACE_DIR
+        value: data/plugin_workspaces
       - key: AGENT_WORKSPACE_DIR
         value: agent_workspace
+      - key: ATTACHMENT_STORAGE_DIR
+        value: data/attachments_tmp
+      - key: VIDEO_STORAGE_DIR
+        value: data/videos
+      - key: VIDEO_PROVIDER
+        value: none
+      - key: IMAGE_PROVIDER
+        value: none
+      - key: VISION_PROVIDER
+        value: none
       - key: WEB_SEARCH_PROVIDER
         value: duckduckgo
       - key: REQUEST_TIMEOUT_SECONDS
-        value: "90"
-      # Set to https://<your-service>.onrender.com after first deploy (same origin).
+        value: "60"
+      # After first deploy, set these to https://<service>.onrender.com (same origin).
+      # Leave empty until the URL is known — then update in Dashboard and redeploy/restart.
       - key: CORS_ALLOWED_ORIGINS
         sync: false
       - key: BILLING_PUBLIC_BASE_URL
         sync: false
+      - key: AUTH_PUBLIC_BASE_URL
+        sync: false
+      # Stripe intentionally unset — no real payments on free test.

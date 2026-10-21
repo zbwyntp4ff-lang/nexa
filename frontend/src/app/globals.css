@@ -295,6 +295,9 @@
 @utility nexa-fade-in {
   animation: nexa-fade-in 0.3s ease-out both;
 }
+@utility nexa-panel-switch {
+  animation: nexa-panel-switch 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
 @utility nexa-slide-up {
   animation: nexa-slide-up 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -319,6 +322,18 @@
 @keyframes nexa-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+@keyframes nexa-panel-switch {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+    filter: blur(0);
+  }
 }
 @keyframes nexa-slide-up {
   from { opacity: 0; transform: translateY(8px); }
@@ -503,4 +518,31 @@ button, a, [role="button"], [role="tab"] {
 @keyframes hexa-mic-pulse {
   0%, 100% { box-shadow: 0 0 28px rgba(120, 80, 255, 0.45); transform: scale(1); }
   50% { box-shadow: 0 0 48px rgba(100, 180, 255, 0.7); transform: scale(1.05); }
+}
+.hexa-ctrl-active {
+  background: #3a2a55;
+  box-shadow: 0 0 0 1px rgba(140, 120, 255, 0.55);
+}
+
+/* Phone / PWA: notch + home-indicator safe areas */
+html,
+body {
+  min-height: 100dvh;
+}
+body {
+  padding:
+    env(safe-area-inset-top, 0)
+    env(safe-area-inset-right, 0)
+    env(safe-area-inset-bottom, 0)
+    env(safe-area-inset-left, 0);
+}
+@media (max-width: 768px) {
+  .nexa-chat-atmosphere {
+    overscroll-behavior: none;
+  }
+  input,
+  textarea,
+  select {
+    font-size: 16px; /* prevents iOS zoom-on-focus */
+  }
 }

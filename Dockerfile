@@ -24,7 +24,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl gnupg caddy \
+      ca-certificates curl gnupg caddy procps \
       libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
       libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
       libgbm1 libasound2 libpango-1.0-0 libcairo2 \
@@ -53,9 +53,12 @@ RUN chmod +x ./scripts/prod_start.sh \
     && useradd --create-home --shell /bin/bash nexa \
     && chown -R nexa:nexa /app /ms-playwright
 
-USER nexa
+# Entrypoint starts as root only to chown the mounted volume, then drops to `nexa`
+# for uvicorn/Next (see scripts/prod_start.sh). Do not expose secrets in the image.
+USER root
 EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+# Shell form so ${PORT} expands (JSON/exec form does not run a shell).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
   CMD curl -fsS "http://127.0.0.1:${PORT:-8080}/health" || exit 1
 
 CMD ["./scripts/prod_start.sh"]

@@ -1,8 +1,10 @@
 "use client";
 import * as React from "react";
 import {
+  Compass,
   FolderKanban,
   MessageSquarePlus,
+  Mic,
   MoreHorizontal,
   Pencil,
   Search,
@@ -29,6 +31,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { LogoWordmark } from "@/components/common/logo";
+import { ModeSelector } from "@/components/chat/mode-selector";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
 import { MODE_GRADIENT } from "@/lib/mode-theme";
@@ -46,6 +49,9 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const createProject = useChatStore((s) => s.createProject);
   const openSettings = useUiStore((s) => s.openSettings);
   const openProjects = useUiStore((s) => s.openProjects);
+  const bumpPanelMotion = useUiStore((s) => s.bumpPanelMotion);
+  const activeView = useUiStore((s) => s.activeView);
+  const setActiveView = useUiStore((s) => s.setActiveView);
   const [query, setQuery] = React.useState("");
   const [renamingId, setRenamingId] = React.useState<string | null>(null);
   const [renameValue, setRenameValue] = React.useState("");
@@ -62,6 +68,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   }, [conversations, query]);
   function handleNewChat() {
     createConversation("chat");
+    bumpPanelMotion();
     onNavigate?.();
   }
   function handleSelect(id: string) {
@@ -82,11 +89,12 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     onNavigate?.();
   }
   return (
-    <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground backdrop-blur-xl">
-      <div className="flex items-center justify-between px-4 py-4">
+    <div className="flex h-full min-h-0 flex-col bg-sidebar text-sidebar-foreground backdrop-blur-xl">
+      {/* Fixed top — never covers chat history */}
+      <div className="shrink-0 px-4 pt-4 pb-2">
         <LogoWordmark />
       </div>
-      <div className="px-3">
+      <div className="shrink-0 px-3 pb-2">
         <Button
           onClick={handleNewChat}
           className={cn("w-full justify-start gap-2 border-none text-white shadow-lg hover:opacity-90", MODE_GRADIENT.chat)}
@@ -95,124 +103,172 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           {t("sidebar.newChat")}
         </Button>
       </div>
-      <div className="px-3 pt-3">
-        <div className="relative">
-          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("sidebar.searchChats")}
-            aria-label={t("sidebar.searchChatHistory")}
-            className="pl-8"
-          />
-        </div>
-      </div>
-      <div className="mt-3 flex items-center justify-between px-4">
-        <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{t("sidebar.projects")}</span>
-        <button
-          type="button"
-          onClick={handleNewProject}
-          className="rounded p-1 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label={t("sidebar.newProject")}
-        >
-          <FolderKanban className="size-4" aria-hidden="true" />
-        </button>
-      </div>
-      <nav aria-label={t("sidebar.projects")} className="px-2 pt-1">
-        {projects.length === 0 ? (
-          <p className="px-2 py-1.5 text-xs text-muted-foreground">{t("sidebar.noProjects")}</p>
-        ) : (
-          <ul className="space-y-0.5">
-            {projects.map((project) => (
-              <li key={project.id}>
-                <button
-                  type="button"
-                  onClick={() => { openProjects(project.id); onNavigate?.(); }}
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <FolderKanban className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span className="truncate">{project.name}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </nav>
-      <div className="mt-3 px-4">
-        <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{t("sidebar.recentChats")}</span>
-      </div>
-      <ScrollArea className="mt-1 min-h-0 flex-1 px-2 nexa-scrollbar">
-        {filtered.length === 0 ? (
-          <p className="px-2 py-1.5 text-xs text-muted-foreground">
-            {conversations.length === 0 ? t("sidebar.noChats") : t("sidebar.noChatsMatch")}
+      {/* Scrollable middle: modes + projects + chat history (settings/profile stay below) */}
+      <ScrollArea className="min-h-0 flex-1 px-2 nexa-scrollbar">
+        <div className="px-1 pb-3">
+          <p className="mb-1.5 px-1 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+            {t("sidebar.modes")}
           </p>
-        ) : (
-          <ul className="space-y-0.5 pb-2" aria-label={t("sidebar.recentChats")}>
-            {filtered.map((conversation) => {
-              const isActive = conversation.id === activeConversationId;
-              const isRenaming = renamingId === conversation.id;
-              return (
-                <li key={conversation.id} className="group relative">
-                  {isRenaming ? (
-                    <Input
-                      autoFocus
-                      value={renameValue}
-                      onChange={(e) => setRenameValue(e.target.value)}
-                      onBlur={commitRename}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") commitRename();
-                        if (e.key === "Escape") setRenamingId(null);
-                      }}
-                      aria-label={t("rename.chat")}
-                      className="h-8"
-                    />
-                  ) : (
+          <ModeSelector
+            orientation="vertical"
+            onSelect={() => {
+              setActiveView("chat");
+              onNavigate?.();
+            }}
+          />
+          <div className="mt-1.5 flex flex-col gap-0.5 rounded-lg bg-muted/40 p-1" role="group" aria-label={t("sidebar.views")}>
+            <button
+              type="button"
+              aria-pressed={activeView === "omniverse"}
+              onClick={() => {
+                setActiveView("omniverse");
+                onNavigate?.();
+              }}
+              className={cn(
+                "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                activeView === "omniverse"
+                  ? "bg-background text-foreground shadow-sm nexa-glow-chat"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <Compass className="size-4 shrink-0 text-primary" aria-hidden="true" />
+              <span className="truncate">{t("omniverse.tab")}</span>
+            </button>
+            <button
+              type="button"
+              aria-pressed={activeView === "hexa"}
+              onClick={() => {
+                setActiveView("hexa");
+                onNavigate?.();
+              }}
+              className={cn(
+                "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                activeView === "hexa"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <Mic className="size-4 shrink-0 text-primary" aria-hidden="true" />
+              <span className="truncate">HEXA</span>
+            </button>
+          </div>
+          <div className="relative mt-3">
+            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t("sidebar.searchChats")}
+              aria-label={t("sidebar.searchChatHistory")}
+              className="pl-8"
+            />
+          </div>
+          <div className="mt-3 flex items-center justify-between px-1">
+            <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{t("sidebar.projects")}</span>
+            <button
+              type="button"
+              onClick={handleNewProject}
+              className="rounded p-1 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={t("sidebar.newProject")}
+            >
+              <FolderKanban className="size-4" aria-hidden="true" />
+            </button>
+          </div>
+          <nav aria-label={t("sidebar.projects")} className="pt-1">
+            {projects.length === 0 ? (
+              <p className="px-2 py-1.5 text-xs text-muted-foreground">{t("sidebar.noProjects")}</p>
+            ) : (
+              <ul className="space-y-0.5">
+                {projects.map((project) => (
+                  <li key={project.id}>
                     <button
                       type="button"
-                      onClick={() => handleSelect(conversation.id)}
-                      aria-current={isActive ? "true" : undefined}
-                      className={cn(
-                        "flex w-full items-center gap-2 rounded-md py-1.5 pr-8 pl-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                        isActive
-                          ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                          : "text-sidebar-foreground hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground"
-                      )}
+                      onClick={() => { openProjects(project.id); onNavigate?.(); }}
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      <span className="truncate">{conversation.title}</span>
+                      <FolderKanban className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                      <span className="truncate">{project.name}</span>
                     </button>
-                  )}
-                  {!isRenaming && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={
-                          <button
-                            type="button"
-                            className="absolute top-1/2 right-1 -translate-y-1/2 rounded p-1 text-muted-foreground opacity-0 hover:bg-sidebar-accent focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100"
-                            aria-label={`More actions for ${conversation.title}`}
-                          >
-                            <MoreHorizontal className="size-4" aria-hidden="true" />
-                          </button>
-                        }
+                  </li>
+                ))}
+              </ul>
+            )}
+          </nav>
+          <div className="mt-3 px-1">
+            <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{t("sidebar.recentChats")}</span>
+          </div>
+          {filtered.length === 0 ? (
+            <p className="px-2 py-1.5 text-xs text-muted-foreground">
+              {conversations.length === 0 ? t("sidebar.noChats") : t("sidebar.noChatsMatch")}
+            </p>
+          ) : (
+            <ul className="mt-1 space-y-0.5 pb-2" aria-label={t("sidebar.recentChats")}>
+              {filtered.map((conversation) => {
+                const isActive = conversation.id === activeConversationId;
+                const isRenaming = renamingId === conversation.id;
+                return (
+                  <li key={conversation.id} className="group relative">
+                    {isRenaming ? (
+                      <Input
+                        autoFocus
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onBlur={commitRename}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") commitRename();
+                          if (e.key === "Escape") setRenamingId(null);
+                        }}
+                        aria-label={t("rename.chat")}
+                        className="h-8"
                       />
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => startRename(conversation.id, conversation.title)}>
-                          <Pencil className="size-4" aria-hidden="true" />
-                          {t("chat.edit")}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem variant="destructive" onClick={() => setPendingDeleteId(conversation.id)}>
-                          <Trash2 className="size-4" aria-hidden="true" />
-                          {t("delete.confirm")}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleSelect(conversation.id)}
+                        aria-current={isActive ? "true" : undefined}
+                        className={cn(
+                          "flex w-full items-center gap-2 rounded-md py-1.5 pr-8 pl-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          isActive
+                            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                            : "text-sidebar-foreground hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground"
+                        )}
+                      >
+                        <span className="truncate">{conversation.title}</span>
+                      </button>
+                    )}
+                    {!isRenaming && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          render={
+                            <button
+                              type="button"
+                              className="absolute top-1/2 right-1 -translate-y-1/2 rounded p-1 text-muted-foreground opacity-0 hover:bg-sidebar-accent focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100"
+                              aria-label={`More actions for ${conversation.title}`}
+                            >
+                              <MoreHorizontal className="size-4" aria-hidden="true" />
+                            </button>
+                          }
+                        />
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => startRename(conversation.id, conversation.title)}>
+                            <Pencil className="size-4" aria-hidden="true" />
+                            {t("chat.edit")}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem variant="destructive" onClick={() => setPendingDeleteId(conversation.id)}>
+                            <Trash2 className="size-4" aria-hidden="true" />
+                            {t("delete.confirm")}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
       </ScrollArea>
-      <div className="mt-auto space-y-1 border-t border-sidebar-border p-2">
+      {/* Fixed footer — never overlays chat list */}
+      <div className="z-10 shrink-0 space-y-1 border-t border-sidebar-border bg-sidebar p-2">
         <button
           type="button"
           onClick={() => { openSettings(); onNavigate?.(); }}
@@ -221,12 +277,16 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           <Settings className="size-4" aria-hidden="true" />
           {t("sidebar.settings")}
         </button>
-        <div className="flex items-center gap-2 rounded-md px-2 py-2 text-sm text-sidebar-foreground">
+        <button
+          type="button"
+          onClick={() => { openSettings("personalization"); onNavigate?.(); }}
+          className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
           <span className="flex size-7 items-center justify-center rounded-full nexa-gradient-chat text-[11px] font-semibold text-white">
             N
           </span>
           <span className="truncate">{t("sidebar.guest")}</span>
-        </div>
+        </button>
       </div>
       <AlertDialog open={pendingDeleteId !== null} onOpenChange={(open) => !open && setPendingDeleteId(null)}>
         <AlertDialogContent>

@@ -4,7 +4,8 @@ from app.config.settings import Settings, get_settings
 def test_default_provider_is_mock(monkeypatch):
     monkeypatch.delenv("AI_PROVIDER", raising=False)
     get_settings.cache_clear()
-    settings = get_settings()
+    # Construct without inheriting a developer .env AI_PROVIDER=ollama override.
+    settings = Settings(_env_file=None)
     assert settings.ai_provider == "mock"
 def test_provider_read_from_env(monkeypatch):
     monkeypatch.setenv("AI_PROVIDER", "OpenAI")

@@ -54,6 +54,7 @@ class WorkflowEngine:
         autonomy: AutonomyLevel | str = AutonomyLevel.ASSISTED,
         project_id: str | None = None,
         conversation_id: str | None = None,
+        user_id: str | None = None,
         limits: WorkflowLimits | None = None,
         tasks: list[WorkflowTask] | None = None,
     ) -> Workflow:
@@ -69,6 +70,7 @@ class WorkflowEngine:
             raise WorkflowLimitError("maximum tasks")
         validate_graph(planned)
         workflow = Workflow(
+            user_id=user_id,
             name=name or _title_from_goal(goal),
             description=description or goal.strip(),
             goal=goal.strip(),
@@ -85,13 +87,23 @@ class WorkflowEngine:
         self._audit.record(workflow, status=WorkflowStatus.PENDING.value)
         self._workflows[workflow.id] = workflow
         return workflow
-    def list(self) -> list[Workflow]:
-        return list(self._workflows.values())
-    def get(self, workflow_id: str) -> Workflow:
+    def list(self, *, user_id: str | None = None) -> list[Workflow]:
+        items = list(self._workflows.values())
+        if user_id is not None:
+            items = [w for w in items if w.user_id == user_id]
+        return items
+    def get(self, workflow_id: str, *, user_id: str | None = None) -> Workflow:
         workflow = self._workflows.get(workflow_id)
         if workflow is None:
             raise WorkflowNotFoundError(workflow_id)
+        if user_id is not None and workflow.user_id != user_id:
+            raise WorkflowNotFoundError(workflow_id)
         return workflow
+    def delete_user_workflows(self, user_id: str) -> int:
+        to_remove = [wid for wid, w in self._workflows.items() if w.user_id == user_id]
+        for wid in to_remove:
+            del self._workflows[wid]
+        return len(to_remove)
     async def start(self, workflow_id: str) -> Workflow:
         workflow = self.get(workflow_id)
         if workflow.status not in (WorkflowStatus.PENDING, WorkflowStatus.PAUSED):

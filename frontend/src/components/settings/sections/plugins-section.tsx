@@ -1,4 +1,5 @@
 "use client";
+import { PluginHub } from "@/components/settings/sections/plugin-hub";
 import { Switch } from "@/components/ui/switch";
 import { useT } from "@/lib/i18n";
 import { PLUGINS } from "@/lib/plugins";
@@ -43,6 +44,7 @@ export function PluginsSection() {
           );
         })}
       </ul>
+      <PluginHub />
     </div>
   );
 }

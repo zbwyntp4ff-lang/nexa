@@ -19,6 +19,14 @@ class UserConsent(BaseModel):
     accepted_at: datetime
 
 
+class PasskeyCredential(BaseModel):
+    credential_id: str
+    public_key: str
+    sign_count: int = 0
+    label: str = "Passkey"
+    created_at: datetime = Field(default_factory=utcnow)
+
+
 class UserRecord(BaseModel):
     id: str
     first_name: str
@@ -29,9 +37,42 @@ class UserRecord(BaseModel):
     email_verified: bool = False
     is_active: bool = False
     is_owner: bool = False
+    oauth_provider: str | None = None
+    oauth_subject: str | None = None
+    passkeys: list[PasskeyCredential] = Field(default_factory=list)
     consents: list[UserConsent] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
+
+
+class DeviceLoginRecord(BaseModel):
+    """Desktop/device login approval (QR / user_code)."""
+
+    device_code: str
+    user_code: str
+    status: Literal["pending", "approved", "expired", "denied"] = "pending"
+    user_id: str | None = None
+    session_token: str | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+    expires_at: datetime
+    approved_at: datetime | None = None
+
+
+class OAuthStateRecord(BaseModel):
+    state: str
+    provider: str
+    redirect_uri: str
+    return_origin: str = ""
+    created_at: datetime = Field(default_factory=utcnow)
+    expires_at: datetime
+
+
+class PasskeyChallengeRecord(BaseModel):
+    challenge: str
+    purpose: Literal["login", "register"] = "login"
+    user_id: str | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+    expires_at: datetime
 
 
 class EmailVerificationRecord(BaseModel):

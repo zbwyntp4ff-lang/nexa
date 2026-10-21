@@ -7,7 +7,7 @@ from app.knowledge_core.store import load_packs
 
 # Hard budget so Knowledge Core never recreates a giant prompt / TTFT tax.
 _MAX_TOTAL_CHARS = 1400
-_MAX_ALWAYS = 3
+_MAX_ALWAYS = 4
 _MAX_INTENT = 2
 
 
@@ -15,17 +15,18 @@ class KnowledgeCoreComposer:
     """Intent-aware pack selector. Reuses existing Memory/RAG/Search elsewhere."""
 
     def __init__(self, packs: tuple[RulePack, ...] | None = None) -> None:
-        self._packs = packs if packs is not None else load_packs()
+        # None → resolve at compose-time so reload_packs() takes effect without restart.
+        self._packs = packs
 
     def compose(self, message: str, *, task: str | None = None) -> ComposeResult:
+        packs = self._packs if self._packs is not None else load_packs()
         intents = detect_intents(message)
         if task:
             mapped = _task_to_intent(task)
             if mapped and mapped not in intents:
                 intents = [mapped, *intents]
 
-        always_packs, intent_packs = self._select(intents, message)
-        selected = [*always_packs, *intent_packs]
+        always_packs, intent_packs = self._select(packs, intents, message)
         parts: list[str] = ["[NEXA Knowledge Core]"]
         used: list[str] = []
         remaining = _MAX_TOTAL_CHARS - len(parts[0])
@@ -64,17 +65,20 @@ class KnowledgeCoreComposer:
         )
 
     def _select(
-        self, intents: list[IntentKind], message: str
+        self,
+        packs: tuple[RulePack, ...],
+        intents: list[IntentKind],
+        message: str,
     ) -> tuple[list[RulePack], list[RulePack]]:
         intent_ids = {i.value for i in intents}
         lowered = message.lower()
         always = sorted(
-            [p for p in self._packs if p.always],
+            [p for p in packs if p.always],
             key=lambda p: (p.priority, p.id),
         )[:_MAX_ALWAYS]
 
         scored: list[tuple[int, RulePack]] = []
-        for pack in self._packs:
+        for pack in packs:
             if pack.always:
                 continue
             score = 0
@@ -89,7 +93,16 @@ class KnowledgeCoreComposer:
             if score > 0:
                 scored.append((score, pack))
         scored.sort(key=lambda item: (-item[0], item[1].priority, item[1].id))
-        intent_packs = [pack for _, pack in scored[:_MAX_INTENT]]
+        # Prefer unique pack ids (duplicate JSON files must not double-inject).
+        intent_packs: list[RulePack] = []
+        seen_ids = {p.id for p in always}
+        for _, pack in scored:
+            if pack.id in seen_ids:
+                continue
+            intent_packs.append(pack)
+            seen_ids.add(pack.id)
+            if len(intent_packs) >= _MAX_INTENT:
+                break
         return always, intent_packs
 
     @staticmethod

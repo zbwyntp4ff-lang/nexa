@@ -8,6 +8,8 @@ from app.gateway.models import ModelCard
 # cannot be read as "this model is larger, therefore better".
 _OPENAI_CONTEXT = 128_000
 _ANTHROPIC_CONTEXT = 200_000
+_GEMINI_CONTEXT = 128_000
+_OPENROUTER_CONTEXT = 128_000
 def static_catalog() -> list[ModelCard]:
     return [
         ModelCard(
@@ -66,6 +68,87 @@ def static_catalog() -> list[ModelCard]:
             display_name="Claude 3.5 Haiku",
             capabilities=["chat", "coding", "tools"],
             context_window=_ANTHROPIC_CONTEXT,
+            supports_vision=False,
+            supports_tools=True,
+            supports_streaming=True,
+        ),
+        ModelCard(
+            provider="gemini",
+            model_id="gemini-2.0-flash",
+            display_name="Gemini 2.0 Flash",
+            capabilities=["chat", "simple", "coding", "tools", "vision"],
+            context_window=_GEMINI_CONTEXT,
+            supports_vision=True,
+            supports_tools=True,
+            supports_streaming=True,
+        ),
+        ModelCard(
+            provider="gemini",
+            model_id="gemini-1.5-pro",
+            display_name="Gemini 1.5 Pro",
+            capabilities=["chat", "reasoning", "coding", "tools", "vision"],
+            context_window=_GEMINI_CONTEXT,
+            supports_vision=True,
+            supports_tools=True,
+            supports_streaming=True,
+        ),
+        # Prefer currently free OpenRouter routes (paid slugs often 404 without credits).
+        ModelCard(
+            provider="openrouter",
+            model_id="openrouter/free",
+            display_name="OpenRouter · Free (auto)",
+            capabilities=["chat", "simple", "coding", "tools"],
+            context_window=_OPENROUTER_CONTEXT,
+            supports_vision=False,
+            supports_tools=True,
+            supports_streaming=True,
+        ),
+        ModelCard(
+            provider="openrouter",
+            model_id="google/gemma-4-26b-a4b-it:free",
+            display_name="OpenRouter · Gemma 4 26B (free)",
+            capabilities=["chat", "simple", "coding", "tools"],
+            context_window=_OPENROUTER_CONTEXT,
+            supports_vision=False,
+            supports_tools=True,
+            supports_streaming=True,
+        ),
+        ModelCard(
+            provider="openrouter",
+            model_id="google/gemma-4-31b-it:free",
+            display_name="OpenRouter · Gemma 4 31B (free)",
+            capabilities=["chat", "simple", "coding", "tools"],
+            context_window=_OPENROUTER_CONTEXT,
+            supports_vision=False,
+            supports_tools=True,
+            supports_streaming=True,
+        ),
+        ModelCard(
+            provider="openrouter",
+            model_id="liquid/lfm-2.5-2.6b:free",
+            display_name="OpenRouter · LFM 2.5 (free)",
+            capabilities=["chat", "simple", "coding"],
+            context_window=_OPENROUTER_CONTEXT,
+            supports_vision=False,
+            supports_tools=False,
+            supports_streaming=True,
+        ),
+        ModelCard(
+            provider="openrouter",
+            model_id="minimax/minimax-m3.1-flash:free",
+            display_name="OpenRouter · MiniMax M3.1 Flash (free)",
+            capabilities=["chat", "simple", "coding", "tools"],
+            context_window=_OPENROUTER_CONTEXT,
+            supports_vision=False,
+            supports_tools=True,
+            supports_streaming=True,
+        ),
+        ModelCard(
+            provider="openrouter",
+            model_id="cohere/north-mini-code:free",
+            display_name="OpenRouter · North Mini Code (free)",
+            capabilities=["chat", "coding", "tools"],
+            context_window=_OPENROUTER_CONTEXT,
             supports_vision=False,
             supports_tools=True,
             supports_streaming=True,

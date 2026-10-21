@@ -113,6 +113,8 @@ class WorkflowState(BaseModel):
     loop_iterations: int = 0
 class Workflow(BaseModel):
     id: str = Field(default_factory=new_id)
+    user_id: str | None = None
+    """Owner — required for multi-tenant API isolation."""
     name: str
     description: str
     goal: str

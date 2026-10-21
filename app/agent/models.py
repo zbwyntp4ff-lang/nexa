@@ -86,3 +86,8 @@ class AgentResult(BaseModel):
     provider: str | None = None
     model: str | None = None
     display_name: str | None = None
+    #: Phase 3 project execution status (planning/running/verifying/...).
+    project_status: str | None = None
+    project_id: str | None = None
+    project_manifest: dict | None = None
+    partial_success: bool = False

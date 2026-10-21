@@ -2,17 +2,23 @@
 
 Does not replace Knowledge Base (RAG) or Memory; it exposes the structured
 behavior/knowledge packs and stores evaluation feedback for later improvement.
+Feedback is scoped to the authenticated user when auth is enforced.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.api.security_deps import require_user_when_enforced
+from app.auth.models import UserRecord
 from app.knowledge_core.composer import KnowledgeCoreComposer
 from app.knowledge_core.feedback import FeedbackEvent, recent_feedback, record_feedback
 from app.knowledge_core.store import load_packs, reload_packs
 
 router = APIRouter(prefix="/api/v1/knowledge-core", tags=["knowledge-core"])
+_Auth = Annotated[UserRecord | None, Depends(require_user_when_enforced)]
 
 
 class PackSummary(BaseModel):
@@ -79,11 +85,27 @@ async def compose_preview(body: ComposePreviewRequest) -> ComposePreviewResponse
 
 
 @router.post("/feedback", response_model=FeedbackEvent)
-async def submit_feedback(body: FeedbackEvent) -> FeedbackEvent:
+async def submit_feedback(
+    body: FeedbackEvent,
+    user: _Auth = None,
+) -> FeedbackEvent:
     """Store an evaluation example. Does not auto-train the model."""
-    return record_feedback(body)
+    from app.learning.settings import get_learning_settings
+
+    if not get_learning_settings().feedback_enabled:
+        raise HTTPException(
+            status_code=403,
+            detail="Feedback collection is disabled in Learning & Memory settings.",
+        )
+    # Stamp owner from session — ignore any client-supplied user_id.
+    stamped = body.model_copy(update={"user_id": user.id if user else None})
+    return record_feedback(stamped)
 
 
 @router.get("/feedback", response_model=list[FeedbackEvent])
-async def list_feedback(limit: int = 50) -> list[FeedbackEvent]:
-    return recent_feedback(limit=min(max(limit, 1), 200))
+async def list_feedback(
+    limit: int = 50,
+    user: _Auth = None,
+) -> list[FeedbackEvent]:
+    scoped = user.id if user is not None else None
+    return recent_feedback(limit=min(max(limit, 1), 200), user_id=scoped)

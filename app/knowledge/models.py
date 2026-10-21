@@ -34,6 +34,8 @@ class KnowledgeDocument(BaseModel):
     chunk_count: int = 0
     project_id: str | None = None
     conversation_id: str | None = None
+    user_id: str | None = None
+    """Owner of this document. Required for multi-user cloud isolation."""
     doc_hash: str | None = None
     created_at: datetime = Field(default_factory=_utcnow)
 class KnowledgeChunk(BaseModel):
@@ -47,6 +49,8 @@ class KnowledgeChunk(BaseModel):
     section: str | None = None
     project_id: str | None = None
     conversation_id: str | None = None
+    user_id: str | None = None
+    """Copied from the parent document for retrieval-time isolation."""
 class RetrievedChunk(BaseModel):
     """One chunk returned by :class:`app.knowledge.retriever.Retriever`."""
     chunk_id: str

@@ -54,11 +54,36 @@ def browser_to_public(result: BrowserVerificationResult) -> dict[str, Any]:
 
 
 def playwright_available() -> bool:
+    """True only when the Playwright package *and* a Chromium executable exist.
+
+    Safe to call from async code: ``sync_playwright`` cannot run inside a
+    running event loop, so we probe on a worker thread when needed.
+    """
     try:
-        from playwright.async_api import async_playwright  # noqa: F401
+        from pathlib import Path
+
+        from playwright.sync_api import sync_playwright
     except ImportError:
         return False
-    return True
+
+    def _probe() -> bool:
+        try:
+            with sync_playwright() as p:
+                return Path(p.chromium.executable_path).is_file()
+        except Exception:  # noqa: BLE001 — missing browser binary, sandbox path, etc.
+            return False
+
+    try:
+        import asyncio
+
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return _probe()
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return bool(pool.submit(_probe).result(timeout=30))
 
 
 async def verify_preview_browser(

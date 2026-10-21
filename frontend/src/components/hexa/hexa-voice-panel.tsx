@@ -1,6 +1,6 @@
 "use client";
 import * as React from "react";
-import { Crosshair, Keyboard, Menu, Mic, X } from "lucide-react";
+import { Crosshair, Keyboard, Menu, Mic, MicOff, RotateCcw, Square, X } from "lucide-react";
 import { HexaHistory } from "@/components/hexa/hexa-history";
 import { HexaOrb } from "@/components/hexa/hexa-orb";
 import { useHexaVoice } from "@/hooks/use-hexa-voice";
@@ -24,22 +24,45 @@ export function HexaVoicePanel() {
   const pitch = useHexaStore((s) => s.pitch);
   const setRate = useHexaStore((s) => s.setRate);
   const setPitch = useHexaStore((s) => s.setPitch);
+  const continuousMode = useHexaStore((s) => s.continuousMode);
+  const setContinuousMode = useHexaStore((s) => s.setContinuousMode);
+  const autoSpeak = useHexaStore((s) => s.autoSpeak);
+  const setAutoSpeak = useHexaStore((s) => s.setAutoSpeak);
+  const sttLang = useHexaStore((s) => s.sttLang);
+  const setSttLang = useHexaStore((s) => s.setSttLang);
+  const micMuted = useHexaStore((s) => s.micMuted);
   const [draft, setDraft] = React.useState("");
   const [voicesOpen, setVoicesOpen] = React.useState(false);
 
-  const { phase, voices, voiceId, setVoiceId, toggleMic, askNexa, stopAll, sttSupported, ttsSupported } =
-    useHexaVoice();
+  const {
+    phase,
+    voices,
+    voiceId,
+    setVoiceId,
+    toggleMic,
+    askNexa,
+    stopAll,
+    stopSpeakingOnly,
+    toggleMute,
+    replayLast,
+    sttSupported,
+    ttsSupported,
+  } = useHexaVoice();
 
   const title =
     phase === "listening"
       ? t("hexa.listening")
       : phase === "thinking"
-        ? t("hexa.thinking")
+        ? t("hexa.processing")
         : phase === "speaking"
           ? t("hexa.speaking")
-          : phase === "typing"
-            ? t("hexa.typing")
-            : t("hexa.ready");
+          : phase === "interrupted"
+            ? t("hexa.interrupted")
+            : phase === "error"
+              ? t("hexa.error")
+              : phase === "typing"
+                ? t("hexa.typing")
+                : t("hexa.ready");
 
   const subtitle =
     phase === "listening"
@@ -48,7 +71,9 @@ export function HexaVoicePanel() {
         ? lastReply.slice(0, 120) || t("hexa.speakingHint")
         : phase === "thinking"
           ? t("hexa.thinkingHint")
-          : interim || transcript || t("hexa.readyHint");
+          : phase === "interrupted"
+            ? t("hexa.interruptedHint")
+            : interim || transcript || t("hexa.readyHint");
 
   return (
     <div className="hexa-screen relative flex h-full min-h-0 flex-col bg-black text-white">
@@ -74,9 +99,11 @@ export function HexaVoicePanel() {
 
       {voicesOpen && (
         <div className="absolute top-16 right-4 z-20 w-[min(20rem,calc(100%-2rem))] rounded-2xl border border-white/10 bg-[#12121a]/95 p-3 shadow-2xl backdrop-blur-xl">
-          <p className="mb-2 text-[11px] font-semibold tracking-wider text-white/50 uppercase">{t("hexa.voices")}</p>
+          <p className="mb-2 text-[11px] font-semibold tracking-wider text-white/50 uppercase">
+            {t("hexa.voices")}
+          </p>
           {!ttsSupported && <p className="text-xs text-rose-300">{t("hexa.ttsUnsupported")}</p>}
-          <div className="max-h-48 space-y-1 overflow-y-auto nexa-scrollbar">
+          <div className="max-h-40 space-y-1 overflow-y-auto nexa-scrollbar">
             {voices.map((v) => (
               <button
                 key={v.id}
@@ -84,7 +111,7 @@ export function HexaVoicePanel() {
                 onClick={() => setVoiceId(v.id)}
                 className={cn(
                   "flex w-full flex-col rounded-lg px-2.5 py-2 text-left text-xs hover:bg-white/10",
-                  voiceId === v.id && "bg-white/15"
+                  voiceId === v.id && "bg-white/15",
                 )}
               >
                 <span className="font-medium">{v.name}</span>
@@ -117,6 +144,30 @@ export function HexaVoicePanel() {
               className="w-28"
             />
           </label>
+          <label className="mt-3 flex items-center justify-between gap-2 text-[11px] text-white/60">
+            {t("hexa.sttLang")}
+            <select
+              value={sttLang}
+              onChange={(e) => setSttLang(e.target.value === "ru-RU" ? "ru-RU" : "en-US")}
+              className="rounded-md border border-white/15 bg-black/40 px-2 py-1 text-xs text-white"
+            >
+              <option value="ru-RU">Русский</option>
+              <option value="en-US">English</option>
+            </select>
+          </label>
+          <label className="mt-2 flex items-center justify-between gap-2 text-[11px] text-white/60">
+            {t("hexa.continuous")}
+            <input
+              type="checkbox"
+              checked={continuousMode}
+              onChange={(e) => setContinuousMode(e.target.checked)}
+            />
+          </label>
+          <label className="mt-2 flex items-center justify-between gap-2 text-[11px] text-white/60">
+            {t("hexa.autoSpeak")}
+            <input type="checkbox" checked={autoSpeak} onChange={(e) => setAutoSpeak(e.target.checked)} />
+          </label>
+          <p className="mt-3 text-[10px] leading-relaxed text-white/40">{t("hexa.privacyHint")}</p>
         </div>
       )}
 
@@ -160,23 +211,31 @@ export function HexaVoicePanel() {
             className="h-11 flex-1 rounded-full border border-white/15 bg-white/5 px-4 text-sm text-white outline-none placeholder:text-white/35 focus:border-white/35"
             autoFocus
           />
-          <button
-            type="submit"
-            className="rounded-full bg-white/10 px-4 text-sm font-medium hover:bg-white/15"
-          >
+          <button type="submit" className="rounded-full bg-white/10 px-4 text-sm font-medium hover:bg-white/15">
             {t("hexa.send")}
           </button>
         </form>
       )}
 
-      <div className="flex items-center justify-center gap-8 pb-6 pt-1">
+      <div className="flex items-center justify-center gap-4 pb-6 pt-1 sm:gap-6">
         <button
           type="button"
           aria-label={t("hexa.keyboard")}
           onClick={() => setShowKeyboard(!showKeyboard)}
-          className="flex size-12 items-center justify-center rounded-full bg-[#2a2a32] text-white hover:bg-[#34343e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+          className="flex size-11 items-center justify-center rounded-full bg-[#2a2a32] text-white hover:bg-[#34343e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
         >
           <Keyboard className="size-5" />
+        </button>
+        <button
+          type="button"
+          aria-label={micMuted ? t("hexa.unmute") : t("hexa.mute")}
+          onClick={toggleMute}
+          className={cn(
+            "flex size-11 items-center justify-center rounded-full bg-[#2a2a32] text-white hover:bg-[#34343e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40",
+            micMuted && "hexa-ctrl-active",
+          )}
+        >
+          {micMuted ? <MicOff className="size-5" /> : <Mic className="size-5 opacity-70" />}
         </button>
         <button
           type="button"
@@ -184,10 +243,30 @@ export function HexaVoicePanel() {
           onClick={toggleMic}
           className={cn(
             "hexa-mic-btn flex size-[4.5rem] items-center justify-center rounded-full text-white shadow-[0_0_40px_rgba(120,80,255,0.45)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50",
-            phase === "listening" && "hexa-mic-active"
+            phase === "listening" && "hexa-mic-active",
+            micMuted && "opacity-50",
           )}
         >
           <Mic className="size-7" />
+        </button>
+        <button
+          type="button"
+          aria-label={t("hexa.stop")}
+          onClick={stopSpeakingOnly}
+          className={cn(
+            "flex size-11 items-center justify-center rounded-full bg-[#2a2a32] text-white hover:bg-[#34343e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40",
+            (phase === "speaking" || phase === "thinking") && "hexa-ctrl-active",
+          )}
+        >
+          <Square className="size-4 fill-current" />
+        </button>
+        <button
+          type="button"
+          aria-label={t("hexa.replay")}
+          onClick={replayLast}
+          className="flex size-11 items-center justify-center rounded-full bg-[#2a2a32] text-white hover:bg-[#34343e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+        >
+          <RotateCcw className="size-5" />
         </button>
         <button
           type="button"
@@ -196,7 +275,7 @@ export function HexaVoicePanel() {
             stopAll();
             setActiveView("chat");
           }}
-          className="flex size-12 items-center justify-center rounded-full bg-[#2a2a32] text-white hover:bg-[#34343e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+          className="flex size-11 items-center justify-center rounded-full bg-[#2a2a32] text-white hover:bg-[#34343e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
         >
           <X className="size-5" />
         </button>

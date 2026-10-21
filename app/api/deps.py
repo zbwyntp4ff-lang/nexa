@@ -6,6 +6,7 @@ mutating environment variables to force a rebuild.
 """
 from __future__ import annotations
 from functools import lru_cache
+
 from app.agent.agent import Agent
 from app.agent.executor import Executor
 from app.agent.planner import RuleBasedPlanner
@@ -36,6 +37,9 @@ def get_auth_store() -> AuthStore:
 @lru_cache
 def get_auth_service() -> AuthService:
     settings = get_settings()
+    public_base = (settings.auth_public_base_url or settings.billing_public_base_url or "").rstrip(
+        "/"
+    ) or "http://localhost:4820"
     return AuthService(
         get_auth_store(),
         build_email_service(settings),
@@ -48,6 +52,12 @@ def get_auth_service() -> AuthService:
         bootstrap_first_owner=settings.auth_bootstrap_first_owner,
         single_user=settings.auth_single_user,
         skip_email_verification=settings.auth_skip_email_verification,
+        public_base_url=public_base,
+        device_ttl_seconds=settings.auth_device_ttl_seconds,
+        rp_id=settings.auth_rp_id,
+        rp_name=settings.auth_rp_name,
+        oauth_settings=settings,
+        api_public_url=settings.auth_api_public_url,
     )
 @lru_cache
 def get_nexa_core() -> NexaCore:
@@ -122,6 +132,51 @@ def get_billing_store():
 
 
 @lru_cache
+def get_token_store():
+    from app.tokens.store import TokenStore
+
+    return TokenStore(get_settings().token_store_path)
+
+
+@lru_cache
+def get_token_service():
+    from app.tokens.service import TokenService
+
+    settings = get_settings()
+    daily = settings.token_default_daily_limit
+    monthly = settings.token_default_monthly_limit
+    balance = settings.token_default_balance
+    if settings.free_tier_mode:
+        daily = min(daily, settings.free_tier_daily_chat_cap)
+        monthly = min(monthly, max(settings.free_tier_daily_chat_cap * 30, 1))
+        balance = min(balance, settings.free_tier_daily_chat_cap)
+    return TokenService(
+        get_token_store(),
+        default_balance=balance,
+        default_daily_limit=daily,
+        default_monthly_limit=monthly,
+        cost_chat=settings.token_cost_chat,
+        cost_agent=settings.token_cost_agent,
+        cost_image=settings.token_cost_image,
+        cost_default=settings.token_cost_default,
+    )
+
+
+@lru_cache
+def get_profile_store():
+    from app.profile.store import ProfileStore
+
+    return ProfileStore(get_settings().profile_store_path)
+
+
+@lru_cache
+def get_profile_service():
+    from app.profile.service import ProfileService
+
+    return ProfileService(get_profile_store())
+
+
+@lru_cache
 def get_entitlement_service():
     from app.billing.entitlements import EntitlementService
 
@@ -151,3 +206,10 @@ def get_workflow_engine() -> WorkflowEngine:
         knowledge_base=get_knowledge_base(),
         model_gateway=get_nexa_core().gateway,
     )
+
+
+def get_plugin_manager_dep():
+    """Plugin Hub manager (Part 14). Cached inside ``app.plugins.manager``."""
+    from app.plugins.manager import get_plugin_manager
+
+    return get_plugin_manager()

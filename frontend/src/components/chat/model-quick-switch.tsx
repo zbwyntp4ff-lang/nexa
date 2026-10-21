@@ -14,14 +14,8 @@ import {
 import { cn } from "@/lib/utils";
 import { ApiError, getGatewayModels, updateModelSelection } from "@/lib/api";
 import { useT } from "@/lib/i18n";
+import { providerLabel } from "@/lib/provider-labels";
 import type { GatewayModelsResponse } from "@/lib/types";
-
-function providerLabel(provider: string): string {
-  if (provider === "openai") return "OpenAI";
-  if (provider === "anthropic") return "Anthropic";
-  if (provider === "ollama") return "Ollama";
-  return provider;
-}
 
 /**
  * Compact model switcher shown right next to the composer's send button.
@@ -79,8 +73,8 @@ export function ModelQuickSwitch() {
   const currentValue = data.selection_mode === "auto" ? "auto" : (data.model ?? "auto");
   const currentLabel =
     data.selection_mode === "auto"
-      ? `${t("models.auto")} · ${data.active_display_name ?? data.active_model}`
-      : (data.active_display_name ?? data.active_model);
+      ? `${t("models.auto")} · ${providerLabel(data.active_provider)} · ${data.active_display_name ?? data.active_model}`
+      : `${providerLabel(data.active_provider)} · ${data.active_display_name ?? data.active_model}`;
 
   return (
     <DropdownMenu>

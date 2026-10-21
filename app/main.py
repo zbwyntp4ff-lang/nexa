@@ -7,7 +7,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from app.api.routes import (
     agent,
     attachments,
@@ -15,15 +15,23 @@ from app.api.routes import (
     billing,
     build,
     chat,
+    conversations,
     health,
     image,
     knowledge,
     knowledge_core,
+    learning,
     memory,
     model,
     models,
+    observability,
+    plugins,
+    profile,
+    projects,
     research,
+    results,
     status,
+    tokens,
     video,
     voice,
     workflow,
@@ -33,6 +41,17 @@ from app.attachments.manager import get_attachment_manager
 from app.config.settings import get_settings
 from app.core.logging_config import configure_logging, get_logger
 from app.gateway.errors import GatewayError
+from app.plugins.errors import (
+    PluginConfirmationRequiredError,
+    PluginError,
+    PluginNotConnectedError,
+    PluginNotFoundError,
+    PluginPermissionDeniedError,
+    PluginTimeoutError,
+    PluginUnavailableError,
+    PluginValidationError,
+)
+from app.agent.concurrency import AgentBusyError
 from app.models.errors import (
     AgentTaskError,
     AttachmentNotFoundError,
@@ -42,6 +61,7 @@ from app.models.errors import (
     DocumentParsingError,
     DocumentTooLargeError,
     EmptyMessageError,
+    FeatureDisabledError,
     InvalidURLError,
     KnowledgeDocumentNotFoundError,
     KnowledgeIndexingTimeoutError,
@@ -86,14 +106,28 @@ from app.billing.errors import (
     UsageLimitExceededError,
     WebhookSignatureError,
 )
+from app.tokens.errors import (
+    DailyTokenLimitError,
+    InsufficientTokensError,
+    InvalidTokenAmountError,
+    MonthlyTokenLimitError,
+    NegativeBalanceError,
+    TokenAdminRequiredError,
+    TokenError,
+)
 from app.auth.errors import (
+    AccountDeleteConfirmError,
     AccountNotActiveError,
     AuthError,
     ConsentRequiredError,
+    DeviceLoginError,
+    DeviceLoginPendingError,
     EmailAlreadyRegisteredError,
     EmailNotVerifiedError,
     InvalidCredentialsError,
     InvalidVerificationCodeError,
+    OAuthStateInvalidError,
+    PasskeyError,
     PasswordMismatchError,
     SessionInvalidError,
     UnauthorizedError,
@@ -105,6 +139,7 @@ from app.auth.errors import (
     WeakPasswordError,
     RegistrationClosedError,
 )
+from app.auth.oauth import OAuthExchangeError, OAuthNotConfiguredError
 from app.models.status import ErrorResponse
 settings = get_settings()
 configure_logging(settings.log_level)
@@ -149,6 +184,30 @@ async def _warm_inference() -> None:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
+    from app.config.production_guards import (
+        assert_durable_production,
+        is_durable_production,
+        is_public_cloud,
+    )
+
+    # Durable production and NEXA_PUBLIC_BETA share the same hard fail path.
+    assert_durable_production(settings)
+    try:
+        from app.conversations.store import get_conversation_store
+        from app.db.engine import get_database
+        from app.memory.manager import get_memory_manager
+
+        get_database.cache_clear()
+        get_conversation_store.cache_clear()
+        get_memory_manager.cache_clear()
+        get_database().migrate()
+        get_conversation_store()
+        get_memory_manager()
+        logger.info("database migrate ok")
+    except Exception:  # noqa: BLE001
+        logger.exception("database migrate failed")
+        if is_durable_production(settings) or is_public_cloud(settings):
+            raise
     task = asyncio.create_task(_attachment_cleanup_loop())
     warm = asyncio.create_task(_warm_inference())
     try:
@@ -156,11 +215,17 @@ async def _lifespan(app: FastAPI):
     finally:
         warm.cancel()
         task.cancel()
+
+
+_disable_docs = (settings.environment or "").strip().lower() == "production"
 app = FastAPI(
     title="NEXA AI",
-    description="Universal AI platform - foundation, backend and model gateway.",
-    version="0.1.0",
+    description="Cloud-first multi-user AI platform (HEXARI).",
+    version="2.0.0-cloud",
     lifespan=_lifespan,
+    docs_url=None if _disable_docs else "/docs",
+    redoc_url=None if _disable_docs else "/redoc",
+    openapi_url=None if _disable_docs else "/openapi.json",
 )
 # Allows the NEXA frontend (a separate app/process, see frontend/) to call
 # this API from the browser during local development. No credentials or API
@@ -173,16 +238,37 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+from app.web.rate_limit import ApiRateLimitMiddleware
+
+app.add_middleware(
+    ApiRateLimitMiddleware,
+    max_calls=settings.api_rate_limit_per_minute,
+    window_seconds=60.0,
+)
+from app.auth.device_page import DEVICE_PAGE_HTML
+
+@app.get("/auth/device", include_in_schema=False)
+async def device_login_page() -> HTMLResponse:
+    """Phone-facing QR landing page. Must be reachable on the LAN (not localhost)."""
+    return HTMLResponse(DEVICE_PAGE_HTML)
+
 app.include_router(health.router)
 app.include_router(status.router)
 app.include_router(auth.router)
+app.include_router(profile.router)
 app.include_router(billing.router)
+app.include_router(tokens.router)
 app.include_router(model.router)
 app.include_router(models.router)
 app.include_router(chat.router)
 app.include_router(knowledge_core.router)
+app.include_router(learning.router)
+app.include_router(conversations.router)
 app.include_router(memory.router)
 app.include_router(agent.router)
+app.include_router(results.router)
+app.include_router(projects.router)
+app.include_router(observability.router)
 app.include_router(build.router)
 app.include_router(research.router)
 app.include_router(image.router)
@@ -192,6 +278,7 @@ app.include_router(knowledge.router)
 app.include_router(voice.router)
 app.include_router(workflow.router)
 app.include_router(workflows.router)
+app.include_router(plugins.router)
 # --- Error handling ---------------------------------------------------------
 # Domain errors are mapped to stable HTTP status codes and a safe, generic
 # error envelope. Internal details (stack traces, raw exception text from
@@ -215,6 +302,7 @@ _ERROR_STATUS_MAP: dict[type[NexaError], int] = {
     PathTraversalError: 400,
     # --- Agent (Part 2) ---
     AgentTaskError: 400,
+    AgentBusyError: 429,
     # --- Web research (Part 3) ---
     InvalidURLError: 400,
     SSRFProtectionError: 400,
@@ -246,6 +334,7 @@ _ERROR_STATUS_MAP: dict[type[NexaError], int] = {
     WorkflowCycleError: 400,
     WorkflowLimitError: 400,
     WorkflowSecurityError: 403,
+    FeatureDisabledError: 503,
     # --- Auth ---
     EmailAlreadyRegisteredError: 409,
     UsernameTakenError: 409,
@@ -263,6 +352,13 @@ _ERROR_STATUS_MAP: dict[type[NexaError], int] = {
     SessionInvalidError: 401,
     ValidationAuthError: 400,
     RegistrationClosedError: 403,
+    OAuthStateInvalidError: 400,
+    OAuthNotConfiguredError: 503,
+    OAuthExchangeError: 502,
+    DeviceLoginPendingError: 428,
+    DeviceLoginError: 400,
+    PasskeyError: 401,
+    AccountDeleteConfirmError: 400,
     AuthError: 400,
     # --- Billing ---
     BillingNotConfiguredError: 503,
@@ -272,6 +368,23 @@ _ERROR_STATUS_MAP: dict[type[NexaError], int] = {
     WebhookSignatureError: 400,
     RateLimitedError: 429,
     BillingError: 400,
+    # --- Tokens / credits ---
+    InsufficientTokensError: 402,
+    DailyTokenLimitError: 402,
+    MonthlyTokenLimitError: 402,
+    TokenAdminRequiredError: 403,
+    InvalidTokenAmountError: 400,
+    NegativeBalanceError: 500,
+    TokenError: 400,
+    # --- Plugin Hub (Part 14) ---
+    PluginNotFoundError: 404,
+    PluginNotConnectedError: 409,
+    PluginPermissionDeniedError: 403,
+    PluginConfirmationRequiredError: 400,
+    PluginUnavailableError: 503,
+    PluginTimeoutError: 504,
+    PluginValidationError: 400,
+    PluginError: 400,
 }
 _GATEWAY_STATUS = {
     "authentication_error": 503,

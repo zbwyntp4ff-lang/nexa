@@ -1,0 +1,97 @@
+# Validate the production Docker image without publishing the app or pushing
+# the image to a registry. No cloud deploy / DNS / paid resources.
+#
+# Requires:
+#   1. This repo on GitHub with Actions enabled
+#   2. Workflow file on the default branch (or the PR branch) so it can run
+#   3. Manual run: Actions → "Docker image validation" → Run workflow
+#      (workflow_dispatch), OR a push/PR that touches the path filters below
+#
+# Local machines without Docker cannot substitute for this job.
+# Safe env only — AI_PROVIDER is a named provider (not mock). Placeholder
+# OPENROUTER_API_KEY is intentionally fake; chat quality is out of scope.
+
+name: Docker image validation
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "scripts/prod_start.sh"
+      - "scripts/ci_docker_smoke.sh"
+      - "deploy/Caddyfile"
+      - "deploy/render-staging.example.yaml"
+      - "requirements.txt"
+      - "app/**"
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - "frontend/next.config.ts"
+      - "frontend/src/**"
+      - "frontend/public/**"
+      - ".github/workflows/docker-image.yml"
+  push:
+    branches: [main, master]
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "scripts/prod_start.sh"
+      - "scripts/ci_docker_smoke.sh"
+      - "deploy/Caddyfile"
+      - "deploy/render-staging.example.yaml"
+      - "requirements.txt"
+      - "app/**"
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - "frontend/next.config.ts"
+      - "frontend/src/**"
+      - "frontend/public/**"
+      - ".github/workflows/docker-image.yml"
+
+concurrency:
+  group: docker-image-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build + smoke (PORT, health, UI, processes, SIGTERM)
+        env:
+          NEXA_CI_IMAGE_TAG: nexa-ci:${{ github.sha }}
+          NEXA_CI_CONTAINER_NAME: nexa-ci-smoke
+          NEXA_CI_HOST_PORT: "18080"
+          NEXA_CI_CONTAINER_PORT: "18080"
+        run: |
+          chmod +x scripts/prod_start.sh scripts/ci_docker_smoke.sh
+          ./scripts/ci_docker_smoke.sh
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: |
+          mkdir -p /tmp/nexa-ci-logs
+          docker ps -a > /tmp/nexa-ci-logs/docker-ps.txt 2>&1 || true
+          docker logs nexa-ci-smoke > /tmp/nexa-ci-logs/container.log 2>&1 || true
+          docker images 'nexa-ci:*' > /tmp/nexa-ci-logs/images.txt 2>&1 || true
+
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexa-docker-smoke-logs-${{ github.sha }}
+          path: /tmp/nexa-ci-logs/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Ensure image was not pushed
+        if: always()
+        run: |
+          echo "Image kept local to the runner only (no registry login / push steps)."
+          docker images 'nexa-ci:*' || true

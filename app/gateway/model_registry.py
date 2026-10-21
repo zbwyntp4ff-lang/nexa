@@ -5,8 +5,12 @@ onto a card.
 """
 from __future__ import annotations
 from app.gateway.models import ModelCard
-_SAFE_MODEL_ID = __import__("re").compile(r"^[A-Za-z0-9_.:@-]{1,128}$")
+# Allow `/` for OpenRouter-style ids (e.g. meta-llama/llama-3.2-3b-instruct:free).
+# Reject path traversal (`..`) and absolute/relative dots sequences.
+_SAFE_MODEL_ID = __import__("re").compile(r"^[A-Za-z0-9_.:@/-]{1,128}$")
 def is_safe_model_id(model_id: str) -> bool:
+    if ".." in model_id or model_id.startswith("/") or model_id.startswith("./"):
+        return False
     return bool(_SAFE_MODEL_ID.match(model_id))
 def _ollama_matches(installed: str, requested: str) -> bool:
     return installed == requested or installed.split(":", 1)[0] == requested
@@ -34,19 +38,25 @@ class ModelRegistry:
         *,
         openai_configured: bool,
         anthropic_configured: bool,
+        gemini_configured: bool = False,
+        openrouter_configured: bool = False,
         include_mock: bool = True,
     ) -> list[ModelCard]:
+        configured = {
+            "openai": openai_configured,
+            "anthropic": anthropic_configured,
+            "gemini": gemini_configured,
+            "openrouter": openrouter_configured,
+        }
         result: list[ModelCard] = []
         for card in self._static:
             if card.provider == "mock" and not include_mock:
                 continue
             copy = card.model_copy()
-            if card.provider == "openai":
-                copy.availability = "available" if openai_configured else "unavailable"
-                copy.availability_reason = None if openai_configured else "missing_api_key"
-            elif card.provider == "anthropic":
-                copy.availability = "available" if anthropic_configured else "unavailable"
-                copy.availability_reason = None if anthropic_configured else "missing_api_key"
+            if card.provider in configured:
+                ok = configured[card.provider]
+                copy.availability = "available" if ok else "unavailable"
+                copy.availability_reason = None if ok else "missing_api_key"
             elif card.provider == "mock":
                 copy.availability = "available"
                 copy.availability_reason = None
@@ -94,7 +104,12 @@ class ModelRegistry:
             )
         return cards
     def find(self, model_id: str, provider: str | None = None) -> ModelCard | None:
-        cards = self.cards(openai_configured=True, anthropic_configured=True)
+        cards = self.cards(
+            openai_configured=True,
+            anthropic_configured=True,
+            gemini_configured=True,
+            openrouter_configured=True,
+        )
         # Re-find against the last published snapshot is wrong for availability.
         # Callers should search the list they already computed.
         return _find_in(cards, model_id, provider)

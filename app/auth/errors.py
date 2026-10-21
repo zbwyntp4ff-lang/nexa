@@ -17,7 +17,7 @@ class EmailAlreadyRegisteredError(AuthError):
 
 
 class UsernameTakenError(AuthError):
-    default_message = "This username is already taken."
+    default_message = "This username is already taken. If this is your account, sign in instead."
     code = "UsernameTaken"
 
 
@@ -95,3 +95,28 @@ class ValidationAuthError(AuthError):
 class RegistrationClosedError(AuthError):
     default_message = "Registration is closed. This NEXA instance has a single owner account."
     code = "RegistrationClosed"
+
+
+class OAuthStateInvalidError(AuthError):
+    default_message = "OAuth state is invalid or expired."
+    code = "OAuthStateInvalid"
+
+
+class DeviceLoginError(AuthError):
+    default_message = "Device login failed."
+    code = "DeviceLoginError"
+
+
+class DeviceLoginPendingError(AuthError):
+    default_message = "Device login is still pending."
+    code = "authorization_pending"
+
+
+class PasskeyError(AuthError):
+    default_message = "Passkey authentication failed."
+    code = "PasskeyError"
+
+
+class AccountDeleteConfirmError(AuthError):
+    default_message = "Type DELETE to confirm permanent account deletion."
+    code = "AccountDeleteConfirmRequired"

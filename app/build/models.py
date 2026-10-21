@@ -24,6 +24,8 @@ class BuildProjectRecord(BaseModel):
     title: str
     kind: Literal["static_web", "node"] = "static_web"
     conversation_id: str | None = None
+    #: Owner when created under authenticated API; required for cloud ACL.
+    user_id: str | None = None
     root_rel: str
     entry_file: str = "index.html"
     files: list[str] = Field(default_factory=list)

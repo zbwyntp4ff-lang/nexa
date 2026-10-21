@@ -67,7 +67,8 @@ async function resolveStartUrl() {
     const addr = staticServer.address();
     const port = typeof addr === "object" && addr ? addr.port : 48420;
     logger && logger.write(`Static server listening on http://127.0.0.1:${port}/`);
-    return `http://127.0.0.1:${port}/`;
+    // localhost (not 127.0.0.1) so WebAuthn rpId=localhost matches the page origin.
+    return `http://localhost:${port}/`;
   }
   return FRONTEND_DEV_URL;
 }
@@ -104,13 +105,22 @@ function isSameOriginOrFile(targetUrl) {
   }
 }
 function applyContentSecurityPolicy() {
+  // Browser STT (Chrome/Electron) may contact Google speech endpoints.
   const connectSrc = [
     "'self'",
     "http://127.0.0.1:8420",
     "http://localhost:8420",
     "http://localhost:4820",
+    "http://127.0.0.1:48420",
+    "http://localhost:48420",
     "http://127.0.0.1:11434",
     "http://localhost:11434",
+    "https://www.google.com",
+    "https://*.google.com",
+    "https://*.googleapis.com",
+    "https://*.gstatic.com",
+    "wss://*.google.com",
+    "wss://*.googleapis.com",
     process.env.NEXA_BACKEND_URL,
   ]
     .filter(Boolean)
@@ -125,11 +135,40 @@ function applyContentSecurityPolicy() {
             `connect-src ${connectSrc}; ` +
             "style-src 'self' 'unsafe-inline'; " +
             "script-src 'self' 'unsafe-inline'; " +
+            "media-src 'self' blob: mediastream:; " +
             "object-src 'none'; " +
             "base-uri 'self'",
         ],
       },
     });
+  });
+}
+function applyMediaPermissions() {
+  const ses = session.defaultSession;
+  const allowed = new Set(["media", "microphone", "audioCapture", "mediaKeySystem"]);
+  ses.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    try {
+      const requesting = details && details.requestingUrl ? new URL(details.requestingUrl) : null;
+      const okOrigin =
+        !requesting ||
+        (appOrigin && requesting.origin === appOrigin) ||
+        requesting.hostname === "127.0.0.1" ||
+        requesting.hostname === "localhost";
+      callback(Boolean(okOrigin && allowed.has(permission)));
+    } catch {
+      callback(false);
+    }
+  });
+  ses.setPermissionCheckHandler((_webContents, permission, requestingOrigin) => {
+    try {
+      if (!allowed.has(permission)) return false;
+      if (!requestingOrigin) return true;
+      const url = new URL(requestingOrigin);
+      if (appOrigin && url.origin === appOrigin) return true;
+      return url.hostname === "127.0.0.1" || url.hostname === "localhost";
+    } catch {
+      return false;
+    }
   });
 }
 async function createWindow() {
@@ -164,6 +203,27 @@ async function createWindow() {
     if (isSameOriginOrFile(url)) return;
     event.preventDefault();
     if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+  });
+  // Editable fields need an explicit context menu — Chromium/Electron does
+  // not show Cut/Copy/Paste on right-click by default in a custom shell.
+  mainWindow.webContents.on("context-menu", (_event, params) => {
+    const canEdit = params.isEditable;
+    const items = [];
+    if (canEdit) {
+      items.push(
+        { role: "undo", enabled: params.editFlags.canUndo },
+        { role: "redo", enabled: params.editFlags.canRedo },
+        { type: "separator" },
+        { role: "cut", enabled: params.editFlags.canCut },
+        { role: "copy", enabled: params.editFlags.canCopy },
+        { role: "paste", enabled: params.editFlags.canPaste },
+        { role: "selectAll", enabled: params.editFlags.canSelectAll }
+      );
+    } else if (params.selectionText && params.selectionText.trim()) {
+      items.push({ role: "copy" });
+    }
+    if (!items.length) return;
+    Menu.buildFromTemplate(items).popup({ window: mainWindow || undefined });
   });
   const startUrl = await resolveStartUrl();
   try {
@@ -323,6 +383,10 @@ function registerIpcHandlers() {
     return shell.openExternal(url);
   });
   ipcMain.handle("nexa:toggle-devtools", (event) => {
+    // Packaged builds must not expose DevTools to arbitrary renderer pages.
+    if (app.isPackaged && process.env.NEXA_ALLOW_PACKAGED_DEVTOOLS !== "1") {
+      return { open: false, denied: true };
+    }
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) return { open: false };
     const wc = win.webContents;
@@ -332,6 +396,85 @@ function registerIpcHandlers() {
     }
     wc.openDevTools({ mode: "detach" });
     return { open: true };
+  });
+  /**
+   * Open an allowlisted local file with the OS default app.
+   * Payload: { path: string, confirm?: boolean }
+   * - Path must stay under the NEXA agent_workspace (or NEXA_DESKTOP_ALLOWED_DIRS).
+   * - Without confirm=true, shows a native confirmation dialog.
+   * - Never executes shell commands or opens arbitrary paths.
+   */
+  ipcMain.handle("nexa:open-path", async (event, payload) => {
+    const filePath = payload && typeof payload.path === "string" ? payload.path : "";
+    const confirm = !!(payload && payload.confirm);
+    if (!filePath || filePath.includes("\0")) {
+      throw new Error("Rejected: invalid path.");
+    }
+    const pathMod = require("node:path");
+    const fsMod = require("node:fs");
+    const resolved = pathMod.resolve(filePath);
+    const roots = [];
+    // Packaged/dev: prefer workspace next to backend cwd / repo.
+    const workspaceCandidates = [
+      pathMod.join(app.getPath("userData"), "agent_workspace"),
+      pathMod.join(__dirname, "..", "..", "agent_workspace"),
+    ];
+    for (const root of workspaceCandidates) {
+      try {
+        roots.push(fsMod.realpathSync.native ? fsMod.realpathSync.native(root) : fsMod.realpathSync(root));
+      } catch {
+        roots.push(pathMod.resolve(root));
+      }
+    }
+    const extra = (process.env.NEXA_DESKTOP_ALLOWED_DIRS || "")
+      .split(pathMod.delimiter)
+      .map((p) => p.trim())
+      .filter(Boolean);
+    for (const root of extra) {
+      try {
+        roots.push(fsMod.realpathSync(root));
+      } catch {
+        /* skip missing allowlist entries */
+      }
+    }
+    let realTarget;
+    try {
+      realTarget = fsMod.existsSync(resolved) ? fsMod.realpathSync(resolved) : resolved;
+    } catch {
+      throw new Error("Rejected: cannot resolve path.");
+    }
+    const allowed = roots.some((root) => {
+      const rel = pathMod.relative(root, realTarget);
+      return rel && !rel.startsWith("..") && !pathMod.isAbsolute(rel);
+    });
+    // Also allow if target is directly under a root that may not exist yet as realpath.
+    const allowedLoose = roots.some((root) => realTarget === root || realTarget.startsWith(root + pathMod.sep));
+    if (!allowed && !allowedLoose) {
+      throw new Error("Rejected: path is outside allowlisted NEXA directories.");
+    }
+    if (!fsMod.existsSync(realTarget) || !fsMod.statSync(realTarget).isFile()) {
+      throw new Error("Rejected: path is not an existing file.");
+    }
+    if (!confirm) {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      const result = await dialog.showMessageBox(win || undefined, {
+        type: "question",
+        buttons: ["Cancel", "Open"],
+        defaultId: 1,
+        cancelId: 0,
+        title: "Open file?",
+        message: "Open this file with the default application?",
+        detail: realTarget,
+      });
+      if (result.response !== 1) {
+        return { opened: false, cancelled: true, path: realTarget };
+      }
+    }
+    const err = await shell.openPath(realTarget);
+    if (err) {
+      throw new Error(`Failed to open path: ${err}`);
+    }
+    return { opened: true, path: realTarget };
   });
 }
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
@@ -349,6 +492,7 @@ if (!gotSingleInstanceLock) {
     logger = createLogger(path.join(app.getPath("userData"), "logs"));
     logger.write(`NEXA desktop starting (packaged=${app.isPackaged}, platform=${process.platform})`);
     applyContentSecurityPolicy();
+    applyMediaPermissions();
     registerIpcHandlers();
     buildMenu();
     try {
@@ -376,6 +520,12 @@ if (!gotSingleInstanceLock) {
         AI_PROVIDER: process.env.AI_PROVIDER || "ollama",
         LOCAL_MODEL_URL: process.env.LOCAL_MODEL_URL || "http://localhost:11434",
         LOCAL_MODEL_NAME: process.env.LOCAL_MODEL_NAME || "llama3.2:3b",
+        NEXA_STORAGE_MODE: process.env.NEXA_STORAGE_MODE || "persistent",
+        // Do not fake Vision/Create on desktop — require real keys/providers.
+        VISION_PROVIDER: process.env.VISION_PROVIDER || "none",
+        IMAGE_PROVIDER: process.env.IMAGE_PROVIDER || "none",
+        // Local Electron backend may perform allowlisted OS file open / local_files.
+        NEXA_LOCAL_DESKTOP: process.env.NEXA_LOCAL_DESKTOP || "1",
       },
     });
     const healthy = await backendManager.ensureRunning();

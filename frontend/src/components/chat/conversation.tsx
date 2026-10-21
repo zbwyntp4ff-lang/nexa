@@ -2,6 +2,7 @@
 import * as React from "react";
 import { Message } from "./message";
 import type { ChatMessageView } from "@/lib/types";
+
 export function Conversation({
   messages,
   onRetry,
@@ -27,15 +28,27 @@ export function Conversation({
       aria-live="polite"
       aria-label="Conversation"
     >
-      {messages.map((message) => (
-        <Message
-          key={message.id}
-          message={message}
-          onRetry={() => onRetry(message.id)}
-          onEdit={(newContent) => onEdit(message.id, newContent)}
-          onStop={onStop}
-        />
-      ))}
+      {messages.map((message, index) => {
+        let userRequest: string | undefined;
+        if (message.role === "assistant") {
+          for (let i = index - 1; i >= 0; i -= 1) {
+            if (messages[i]?.role === "user") {
+              userRequest = messages[i].content;
+              break;
+            }
+          }
+        }
+        return (
+          <Message
+            key={message.id}
+            message={message}
+            userRequest={userRequest}
+            onRetry={() => onRetry(message.id)}
+            onEdit={(newContent) => onEdit(message.id, newContent)}
+            onStop={onStop}
+          />
+        );
+      })}
       <div ref={bottomRef} />
     </div>
   );

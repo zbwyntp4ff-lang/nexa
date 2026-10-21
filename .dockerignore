@@ -1,3 +1,5 @@
+# Keep the production image free of secrets, tests, and local runtime data.
+# scripts/prod_start.sh is still copied explicitly in the Dockerfile.
 .git
 .github
 .venv
@@ -5,6 +7,7 @@ venv
 .env
 .env.*
 !.env.production.example
+!.env.staging.example
 __pycache__
 *.pyc
 .pytest_cache
@@ -22,11 +25,20 @@ frontend/out
 frontend/coverage
 frontend/playwright-report
 frontend/test-results
+frontend/electron
 .cursor
 .pytest_cache
 tests
+docs
 scripts/e2e_*.py
+scripts/phase6_*.py
+scripts/probe_*.py
+scripts/ci_docker_smoke.sh
+scripts/staging_preflight.py
 backend_*.log
 ollama_*.log
+docker-compose*.yml
 **/__pycache__
 **/.DS_Store
+*.md
+!README.md

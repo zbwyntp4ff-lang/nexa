@@ -38,6 +38,9 @@ class GatewayResult(BaseModel):
     display_name: str
     fallback_used: bool = False
     fallback_from: str | None = None
+    #: Transparent Auto/manual routing metadata (no invented scores).
+    task_kind: str | None = None
+    selection_mode: str | None = None
 class StreamEvent(BaseModel):
     type: str
     text: str = ""
@@ -46,12 +49,15 @@ class StreamEvent(BaseModel):
     display_name: str | None = None
     fallback_used: bool = False
     fallback_from: str | None = None
+    task_kind: str | None = None
+    selection_mode: str | None = None
     error: str | None = None
     message: str | None = None
     #: Knowledge Base sources actually used, attached to the final "done"
     #: event by NexaCore (Part 9) - ModelGateway itself knows nothing about
     #: the Knowledge Base.
     citations: list[dict] = Field(default_factory=list)
+    knowledge_used: bool = False
     #: Latency diagnostics (milliseconds). Populated on meta/done events.
     ttft_ms: float | None = None
     total_ms: float | None = None

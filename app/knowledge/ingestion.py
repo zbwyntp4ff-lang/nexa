@@ -55,7 +55,13 @@ class DocumentIngestion:
         self._timeout = indexing_timeout_seconds
         self._desktop_sandbox_root = desktop_sandbox_root
     async def ingest_upload(
-        self, filename: str, raw: bytes, *, project_id: str | None = None, conversation_id: str | None = None
+        self,
+        filename: str,
+        raw: bytes,
+        *,
+        project_id: str | None = None,
+        conversation_id: str | None = None,
+        user_id: str | None = None,
     ) -> KnowledgeDocument:
         return await self._ingest_bytes(
             filename=filename,
@@ -64,9 +70,15 @@ class DocumentIngestion:
             source=filename,
             project_id=project_id,
             conversation_id=conversation_id,
+            user_id=user_id,
         )
     async def ingest_desktop_file(
-        self, relative_path: str, *, project_id: str | None = None, conversation_id: str | None = None
+        self,
+        relative_path: str,
+        *,
+        project_id: str | None = None,
+        conversation_id: str | None = None,
+        user_id: str | None = None,
     ) -> KnowledgeDocument:
         """Ingest a file from the Desktop Agent's sandboxed workspace only.
         Raises:
@@ -86,9 +98,17 @@ class DocumentIngestion:
             source=relative_path,
             project_id=project_id,
             conversation_id=conversation_id,
+            user_id=user_id,
         )
     async def ingest_web_result(
-        self, url: str, title: str, text: str, *, project_id: str | None = None, conversation_id: str | None = None
+        self,
+        url: str,
+        title: str,
+        text: str,
+        *,
+        project_id: str | None = None,
+        conversation_id: str | None = None,
+        user_id: str | None = None,
     ) -> KnowledgeDocument:
         """Ingest text already fetched by the SSRF-protected web pipeline (never fetches itself)."""
         return await self._ingest_text(
@@ -99,9 +119,16 @@ class DocumentIngestion:
             format_="web",
             project_id=project_id,
             conversation_id=conversation_id,
+            user_id=user_id,
         )
     async def ingest_note(
-        self, title: str, text: str, *, project_id: str | None = None, conversation_id: str | None = None
+        self,
+        title: str,
+        text: str,
+        *,
+        project_id: str | None = None,
+        conversation_id: str | None = None,
+        user_id: str | None = None,
     ) -> KnowledgeDocument:
         return await self._ingest_text(
             text=text,
@@ -111,6 +138,7 @@ class DocumentIngestion:
             format_="note",
             project_id=project_id,
             conversation_id=conversation_id,
+            user_id=user_id,
         )
     # --- shared pipeline -----------------------------------------------------
     def _extension(self, filename: str) -> str:
@@ -124,6 +152,7 @@ class DocumentIngestion:
         source: str,
         project_id: str | None,
         conversation_id: str | None,
+        user_id: str | None = None,
     ) -> KnowledgeDocument:
         if len(raw) > self._max_size_bytes:
             raise DocumentTooLargeError(
@@ -133,7 +162,7 @@ class DocumentIngestion:
         if extension not in self._processor.supported_formats():
             raise UnsupportedDocumentFormatError(extension or "(none)", available=self._processor.supported_formats())
         doc_hash = hashlib.sha256(raw).hexdigest()
-        existing = self._documents.find_by_hash(doc_hash, project_id, conversation_id)
+        existing = self._documents.find_by_hash(doc_hash, project_id, conversation_id, user_id)
         if existing is not None:
             logger.info("document_ingestion_completed document_id=%s dedup=true", existing.id)
             return existing
@@ -146,6 +175,7 @@ class DocumentIngestion:
             status=KnowledgeStatus.PROCESSING,
             project_id=project_id,
             conversation_id=conversation_id,
+            user_id=user_id,
             doc_hash=doc_hash,
         )
         self._documents.save(document)
@@ -174,6 +204,7 @@ class DocumentIngestion:
         format_: str,
         project_id: str | None,
         conversation_id: str | None,
+        user_id: str | None = None,
     ) -> KnowledgeDocument:
         raw = text.encode("utf-8")
         if len(raw) > self._max_size_bytes:
@@ -181,7 +212,7 @@ class DocumentIngestion:
                 f"'{filename}' is {len(raw)} bytes, exceeding the maximum of {self._max_size_bytes} bytes."
             )
         doc_hash = hashlib.sha256(raw).hexdigest()
-        existing = self._documents.find_by_hash(doc_hash, project_id, conversation_id)
+        existing = self._documents.find_by_hash(doc_hash, project_id, conversation_id, user_id)
         if existing is not None:
             logger.info("document_ingestion_completed document_id=%s dedup=true", existing.id)
             return existing
@@ -194,6 +225,7 @@ class DocumentIngestion:
             status=KnowledgeStatus.PROCESSING,
             project_id=project_id,
             conversation_id=conversation_id,
+            user_id=user_id,
             doc_hash=doc_hash,
         )
         self._documents.save(document)
@@ -219,6 +251,7 @@ class DocumentIngestion:
                     chunk_index=index,
                     project_id=document.project_id,
                     conversation_id=document.conversation_id,
+                    user_id=document.user_id,
                 )
             )
         self._vector_store.add_chunks(chunks)

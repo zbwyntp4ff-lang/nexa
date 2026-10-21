@@ -14,8 +14,16 @@ htmlcov/
 .env
 .env.local
 .env.*.local
+.env.bak
+.env.bak-*
+.env.*.bak
 !.env.example
 !.env.production.example
+!.env.staging.example
+!.env.render-free.example
+!.env.development.example
+!.env.testing.example
+docker-compose.staging.yml
 *.pem
 credentials.json
 **/secrets/
@@ -55,3 +63,6 @@ Thumbs.db
 # Deploy tooling local state
 .railway/
 .vercel/
+
+# Local binaries (cloudflared, etc.) — never commit
+/tools/

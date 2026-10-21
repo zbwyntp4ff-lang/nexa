@@ -68,7 +68,8 @@ _PATTERNS: list[tuple[IntentKind, re.Pattern[str]]] = [
         IntentKind.SEARCH,
         re.compile(
             r"актуальн|сегодня|сейчас|latest|current\s+price|на\s+сегодня|"
-            r"проверь\s+в\s+интернет|search\s+the\s+web|найди\s+в\s+интернет",
+            r"проверь\s+в\s+интернет|search\s+the\s+web|найди\s+в\s+интернет|"
+            r"поиск\s+в\s+интернет|новост",
             re.IGNORECASE,
         ),
     ),

@@ -33,6 +33,11 @@ def is_ip_blocked(ip_str: str) -> bool:
         ip = ipaddress.ip_address(ip_str)
     except ValueError:
         return True  # not a parseable IP - treat conservatively as blocked
+    # IPv4-mapped IPv6 (::ffff:127.0.0.1) reports is_loopback=False on the v6
+    # object — unwrap and re-check the embedded IPv4 address.
+    mapped = getattr(ip, "ipv4_mapped", None)
+    if mapped is not None:
+        return is_ip_blocked(str(mapped))
     return (
         ip.is_private
         or ip.is_loopback

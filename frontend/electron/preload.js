@@ -21,5 +21,22 @@ contextBridge.exposeInMainWorld("nexa", {
     }
     return ipcRenderer.invoke("nexa:open-external", url);
   },
+  /**
+   * Open an allowlisted local file via the OS default app.
+   * Main process re-validates the path; confirm=false shows a native dialog.
+   */
+  openPath: (filePath, opts) => {
+    if (typeof filePath !== "string" || !filePath.trim() || filePath.includes("\0")) {
+      return Promise.reject(new Error("openPath requires a non-empty file path string."));
+    }
+    // Block obvious UNC / protocol smuggling in the renderer before IPC.
+    if (/^(file:|https?:|javascript:)/i.test(filePath.trim())) {
+      return Promise.reject(new Error("openPath accepts filesystem paths only, not URLs."));
+    }
+    return ipcRenderer.invoke("nexa:open-path", {
+      path: filePath,
+      confirm: !!(opts && opts.confirm),
+    });
+  },
   toggleDevTools: () => ipcRenderer.invoke("nexa:toggle-devtools"),
 });

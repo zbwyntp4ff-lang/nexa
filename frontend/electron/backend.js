@@ -100,11 +100,17 @@ class BackendManager {
     });
     const python = resolvePythonExecutable(cwd);
     const { hostname, port } = new URL(this.url);
-    this.onLog(`Starting backend: ${python} -m uvicorn app.main:app --port ${port} (cwd=${cwd})`);
+    // Always loopback for Electron-spawned backend. LAN bind requires an
+    // explicit opt-in (misconfiguration must not expose auth cookies / agent).
+    const allowLan = String(process.env.NEXA_ELECTRON_ALLOW_LAN_BIND || "").trim() === "1";
+    const bindHost = allowLan
+      ? (hostname === "0.0.0.0" || hostname === "::" ? "0.0.0.0" : hostname || "127.0.0.1")
+      : "127.0.0.1";
+    this.onLog(`Starting backend: ${python} -m uvicorn app.main:app --host ${bindHost} --port ${port} (cwd=${cwd})`);
     try {
       this.process = spawn(
         python,
-        ["-m", "uvicorn", "app.main:app", "--host", hostname, "--port", String(port)],
+        ["-m", "uvicorn", "app.main:app", "--host", bindHost, "--port", String(port)],
         {
           cwd,
           env: { ...process.env, ...this.extraEnv },

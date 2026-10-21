@@ -37,3 +37,5 @@ class AttachmentRecord(BaseModel):
     text_preview: str | None = None
     created_at: datetime = Field(default_factory=_utcnow)
     expires_at: datetime | None = None
+    # Owner from authenticated session — never accept client-supplied ownership.
+    user_id: str | None = None

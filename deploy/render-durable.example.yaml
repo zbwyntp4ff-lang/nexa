@@ -1,0 +1,79 @@
+# EXAMPLE ONLY — durable public host template (NOT the Free smoke blueprint).
+# Copy/adapt into a Render Blueprint or Dashboard service AFTER the owner
+# approves paid disk / Postgres. This file does not create cloud resources.
+#
+# Differences from render.yaml (free):
+# - Requires a persistent disk mounted at /app/data (paid) OR external Postgres
+# - NEXA_STORAGE_MODE=persistent → startup production_guards apply
+# - TOKENS_ENFORCE=true, email verification on, real AI provider, workflows off
+#
+# Do NOT deploy until secrets and HTTPS origin are set in the Dashboard.
+
+services:
+  - type: web
+    name: nexa-durable
+    runtime: docker
+    # plan: starter  # or higher — Free has no persistent disk
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    # disk:  # uncomment when creating a paid service with disk
+    #   name: nexa-data
+    #   mountPath: /app/data
+    #   sizeGB: 1
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: NEXA_STORAGE_MODE
+        value: persistent
+      - key: MEMORY_BACKEND
+        value: sql
+      - key: DATABASE_URL
+        value: sqlite:///data/nexa.db
+        # Or sync:false and set postgresql://… in Dashboard
+      - key: TOKENS_ENFORCE
+        value: "true"
+      - key: WORKFLOWS_ENABLED
+        value: "false"
+      - key: AUTH_SKIP_EMAIL_VERIFICATION
+        value: "false"
+      - key: AUTH_COOKIE_SECURE
+        value: "true"
+      - key: AUTH_COOKIE_SAMESITE
+        value: lax
+      - key: AUTH_BOOTSTRAP_FIRST_OWNER
+        value: "false"
+      - key: AUTH_SINGLE_USER
+        value: "false"
+      - key: EMAIL_PROVIDER
+        value: smtp
+      - key: AI_PROVIDER
+        value: openai
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: API_RATE_LIMIT_PER_MINUTE
+        value: "120"
+      - key: REGISTER_RATE_LIMIT_PER_HOUR
+        value: "10"
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: AUTH_OWNER_EMAILS
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: AUTH_PUBLIC_BASE_URL
+        sync: false
+      - key: BILLING_PUBLIC_BASE_URL
+        sync: false
+      # Passkey login remains disabled in code — AUTH_RP_ID reserved for future WebAuthn.
+      - key: AUTH_RP_ID
+        sync: false

@@ -8,10 +8,20 @@ from functools import lru_cache
 from typing import Literal
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-ProviderName = Literal["mock", "openai", "anthropic", "local", "ollama", "nexa"]
+ProviderName = Literal[
+    "mock", "openai", "anthropic", "gemini", "openrouter", "local", "ollama", "nexa"
+]
 # Providers that are already implemented. ``ollama`` is the local server
 # under its product name; ``local`` remains as the original alias.
-SUPPORTED_PROVIDERS: tuple[str, ...] = ("mock", "openai", "anthropic", "local", "ollama")
+SUPPORTED_PROVIDERS: tuple[str, ...] = (
+    "mock",
+    "openai",
+    "anthropic",
+    "gemini",
+    "openrouter",
+    "local",
+    "ollama",
+)
 class Settings(BaseSettings):
     """Central application settings, populated from the environment."""
     model_config = SettingsConfigDict(
@@ -24,6 +34,32 @@ class Settings(BaseSettings):
     app_name: str = Field(default="NEXA AI")
     environment: str = Field(default="development")
     log_level: str = Field(default="INFO")
+    # persistent = durable disk (desktop / VPS / Railway+volume).
+    # ephemeral = free-tier hosts without disk (e.g. Render Free) — data lost on restart.
+    nexa_storage_mode: str = Field(default="persistent", alias="NEXA_STORAGE_MODE")
+    # SQL store for server-side conversations (and future durable tables).
+    # sqlite:///data/nexa.db (default) or postgresql://USER:PASS@HOST/DB
+    database_url: str = Field(default="sqlite:///data/nexa.db", alias="DATABASE_URL")
+    # sql = durable Memory via DATABASE_URL; json = legacy MEMORY_STORE_PATH file.
+    memory_backend: str = Field(default="sql", alias="MEMORY_BACKEND")
+    # API-wide rate limit (per IP / minute). 0 disables.
+    api_rate_limit_per_minute: int = Field(default=120, alias="API_RATE_LIMIT_PER_MINUTE")
+    # Free / smoke-test mode: tighter caps (does not invent token usage).
+    free_tier_mode: bool = Field(default=False, alias="FREE_TIER_MODE")
+    free_tier_daily_chat_cap: int = Field(default=50, alias="FREE_TIER_DAILY_CHAT_CAP")
+    # Open public beta host: applies the same hard startup guards as durable
+    # production (TOKENS_ENFORCE, no desktop tools, no mock, email verify, …).
+    nexa_public_beta: bool = Field(default=False, alias="NEXA_PUBLIC_BETA")
+    # Emergency stop for all model calls (ops kill switch).
+    ai_kill_switch: bool = Field(default=False, alias="NEXA_AI_KILL_SWITCH")
+    # Max concurrent /agent runs per authenticated user (0 = unlimited).
+    agent_max_parallel_per_user: int = Field(
+        default=2, alias="AGENT_MAX_PARALLEL_PER_USER"
+    )
+    # Registration abuse guard (IP).
+    register_rate_limit_per_hour: int = Field(
+        default=10, alias="REGISTER_RATE_LIMIT_PER_HOUR"
+    )
     # --- Provider selection ---------------------------------------------
     ai_provider: str = Field(default="mock", alias="AI_PROVIDER")
     # --- OpenAI ----------------------------------------------------------
@@ -33,6 +69,19 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
     anthropic_model: str = Field(
         default="claude-3-5-sonnet-latest", alias="ANTHROPIC_MODEL"
+    )
+    # --- Google Gemini -----------------------------------------------------
+    gemini_api_key: str | None = Field(default=None, alias="GEMINI_API_KEY")
+    # Alias accepted via env GOOGLE_API_KEY through property below if GEMINI unset.
+    google_api_key: str | None = Field(default=None, alias="GOOGLE_API_KEY")
+    gemini_model: str = Field(default="gemini-2.0-flash", alias="GEMINI_MODEL")
+    # --- OpenRouter (OpenAI-compatible) ------------------------------------
+    openrouter_api_key: str | None = Field(default=None, alias="OPENROUTER_API_KEY")
+    openrouter_model: str = Field(
+        default="openai/gpt-4o-mini", alias="OPENROUTER_MODEL"
+    )
+    openrouter_base_url: str = Field(
+        default="https://openrouter.ai/api/v1", alias="OPENROUTER_BASE_URL"
     )
     # --- Local model -------------------------------------------------------
     local_model_url: str = Field(
@@ -61,9 +110,23 @@ class Settings(BaseSettings):
     max_file_read_bytes: int = Field(
         default=1_000_000, alias="MAX_FILE_READ_BYTES"
     )
+    # --- Plugin Hub (Part 14) ------------------------------------------------
+    plugin_store_path: str = Field(
+        default="data/plugin_store.json", alias="PLUGIN_STORE_PATH"
+    )
+    plugin_workspace_dir: str = Field(
+        default="data/plugin_workspaces", alias="PLUGIN_WORKSPACE_DIR"
+    )
+    plugin_key_path: str = Field(default="data/plugin.key", alias="PLUGIN_KEY_PATH")
+    plugin_timeout_seconds: float = Field(
+        default=20.0, alias="PLUGIN_TIMEOUT_SECONDS"
+    )
+    plugin_max_file_bytes: int = Field(
+        default=1_000_000, alias="PLUGIN_MAX_FILE_BYTES"
+    )
     # --- Agent (Part 2) ----------------------------------------------------
     agent_max_steps: int = Field(default=10, alias="AGENT_MAX_STEPS")
-    agent_timeout_seconds: float = Field(default=30.0, alias="AGENT_TIMEOUT_SECONDS")
+    agent_timeout_seconds: float = Field(default=90.0, alias="AGENT_TIMEOUT_SECONDS")
     agent_error_limit: int = Field(default=3, alias="AGENT_ERROR_LIMIT")
     # --- Build Evaluation Engine V1 ---------------------------------------
     build_eval_pass_threshold: int = Field(default=70, alias="BUILD_EVAL_PASS_THRESHOLD")
@@ -83,7 +146,8 @@ class Settings(BaseSettings):
     web_max_search_results: int = Field(default=5, alias="WEB_MAX_SEARCH_RESULTS")
     web_max_redirects: int = Field(default=3, alias="WEB_MAX_REDIRECTS")
     # --- Vision (Part 3) -----------------------------------------------------
-    vision_provider: str = Field(default="mock", alias="VISION_PROVIDER")
+    # none = honest not-configured (default). mock only for local tests.
+    vision_provider: str = Field(default="none", alias="VISION_PROVIDER")
     openai_vision_model: str = Field(default="gpt-4o-mini", alias="OPENAI_VISION_MODEL")
     # --- Documents (Part 3) ---------------------------------------------------
     max_document_size_bytes: int = Field(
@@ -126,7 +190,7 @@ class Settings(BaseSettings):
     )
     knowledge_top_k: int = Field(default=5, alias="KNOWLEDGE_TOP_K")
     knowledge_similarity_threshold: float = Field(
-        default=0.15, alias="KNOWLEDGE_SIMILARITY_THRESHOLD"
+        default=0.28, alias="KNOWLEDGE_SIMILARITY_THRESHOLD"
     )
     knowledge_max_context_chars: int = Field(
         default=6_000, alias="KNOWLEDGE_MAX_CONTEXT_CHARS"
@@ -170,8 +234,9 @@ class Settings(BaseSettings):
     auth_session_cookie_name: str = Field(
         default="nexa_session", alias="AUTH_SESSION_COOKIE_NAME"
     )
+    # Default 90 days; sliding renewal on activity keeps the session until logout.
     auth_session_ttl_seconds: int = Field(
-        default=1_209_600, alias="AUTH_SESSION_TTL_SECONDS"
+        default=7_776_000, alias="AUTH_SESSION_TTL_SECONDS"
     )  # 14 days
     auth_code_ttl_seconds: int = Field(default=900, alias="AUTH_CODE_TTL_SECONDS")
     auth_code_resend_cooldown_seconds: int = Field(
@@ -187,18 +252,69 @@ class Settings(BaseSettings):
     auth_bootstrap_first_owner: bool = Field(
         default=True, alias="AUTH_BOOTSTRAP_FIRST_OWNER"
     )
-    # Single-user desktop mode: only one account may exist; public sign-up is off
-    # after the owner is created. Email verification is skipped for that setup.
-    auth_single_user: bool = Field(default=True, alias="AUTH_SINGLE_USER")
+    # Multi-user by default: anyone can register. Set AUTH_SINGLE_USER=true for
+    # a private desktop install (sign-up closes after the first account).
+    auth_single_user: bool = Field(default=False, alias="AUTH_SINGLE_USER")
     auth_skip_email_verification: bool = Field(
         default=True, alias="AUTH_SKIP_EMAIL_VERIFICATION"
     )
+    # Public origin for OAuth redirects + device/QR verification links.
+    # Falls back to BILLING_PUBLIC_BASE_URL when empty.
+    auth_public_base_url: str = Field(default="", alias="AUTH_PUBLIC_BASE_URL")
+    # OAuth (optional — buttons show; disabled until credentials are set)
+    oauth_google_client_id: str | None = Field(default=None, alias="OAUTH_GOOGLE_CLIENT_ID")
+    oauth_google_client_secret: str | None = Field(
+        default=None, alias="OAUTH_GOOGLE_CLIENT_SECRET"
+    )
+    oauth_github_client_id: str | None = Field(default=None, alias="OAUTH_GITHUB_CLIENT_ID")
+    oauth_github_client_secret: str | None = Field(
+        default=None, alias="OAUTH_GITHUB_CLIENT_SECRET"
+    )
+    oauth_apple_client_id: str | None = Field(default=None, alias="OAUTH_APPLE_CLIENT_ID")
+    oauth_apple_client_secret: str | None = Field(
+        default=None, alias="OAUTH_APPLE_CLIENT_SECRET"
+    )
+    auth_device_ttl_seconds: int = Field(default=600, alias="AUTH_DEVICE_TTL_SECONDS")
+    auth_rp_id: str = Field(default="localhost", alias="AUTH_RP_ID")
+    auth_rp_name: str = Field(default="NEXA", alias="AUTH_RP_NAME")
+    oauth_credentials_dir: str = Field(default="data/oauth", alias="OAUTH_CREDENTIALS_DIR")
+    auth_legal_dir: str = Field(default="data/legal", alias="AUTH_LEGAL_DIR")
+    auth_legal_holder_name: str = Field(default="", alias="AUTH_LEGAL_HOLDER_NAME")
+    auth_legal_holder_kind: str = Field(default="individual", alias="AUTH_LEGAL_HOLDER_KIND")
+    auth_legal_contact: str = Field(default="", alias="AUTH_LEGAL_CONTACT")
+    auth_legal_inn: str = Field(default="", alias="AUTH_LEGAL_INN")
+    auth_api_public_url: str = Field(default="", alias="AUTH_API_PUBLIC_URL")
     # --- Billing / Stripe (production subscriptions) --------------------------
     # Use Stripe test keys for sandbox; live keys only in production.
     # Subscriptions activate ONLY after verified webhook events.
     billing_store_path: str = Field(
         default="data/billing_store.json", alias="BILLING_STORE_PATH"
     )
+    # --- Internal AI tokens / credits -----------------------------------------
+    token_store_path: str = Field(
+        default="data/token_store.json", alias="TOKEN_STORE_PATH"
+    )
+    profile_store_path: str = Field(
+        default="data/profile_store.json", alias="PROFILE_STORE_PATH"
+    )
+    # When true, AI routes require auth and charge tokens (production).
+    # Tests/local API suites set TOKENS_ENFORCE=false via conftest.
+    # Durable production startup refuses TOKENS_ENFORCE=false (see production_guards).
+    tokens_enforce: bool = Field(default=True, alias="TOKENS_ENFORCE")
+    # Autonomous workflows (/api/v1/workflows) are in-memory only until a durable
+    # store ships. Public durable launch should set WORKFLOWS_ENABLED=false.
+    workflows_enabled: bool = Field(default=True, alias="WORKFLOWS_ENABLED")
+    token_default_balance: int = Field(default=100, alias="TOKEN_DEFAULT_BALANCE")
+    token_default_daily_limit: int = Field(
+        default=1_000, alias="TOKEN_DEFAULT_DAILY_LIMIT"
+    )
+    token_default_monthly_limit: int = Field(
+        default=10_000, alias="TOKEN_DEFAULT_MONTHLY_LIMIT"
+    )
+    token_cost_chat: int = Field(default=1, alias="TOKEN_COST_CHAT")
+    token_cost_agent: int = Field(default=5, alias="TOKEN_COST_AGENT")
+    token_cost_image: int = Field(default=10, alias="TOKEN_COST_IMAGE")
+    token_cost_default: int = Field(default=1, alias="TOKEN_COST_DEFAULT")
     stripe_secret_key: str | None = Field(default=None, alias="STRIPE_SECRET_KEY")
     stripe_publishable_key: str | None = Field(
         default=None, alias="STRIPE_PUBLISHABLE_KEY"
@@ -266,6 +382,11 @@ class Settings(BaseSettings):
         return [origin.strip() for origin in self.cors_allowed_origins_raw.split(",") if origin.strip()]
 
     @property
+    def resolved_gemini_api_key(self) -> str | None:
+        """Prefer GEMINI_API_KEY; fall back to GOOGLE_API_KEY."""
+        return (self.gemini_api_key or self.google_api_key or None)
+
+    @property
     def auth_owner_emails(self) -> set[str]:
         return {
             e.strip().lower()
@@ -278,12 +399,18 @@ class Settings(BaseSettings):
         for secret_key in (
             "openai_api_key",
             "anthropic_api_key",
+            "gemini_api_key",
+            "google_api_key",
+            "openrouter_api_key",
             "smtp_password",
             "search_api_key",
             "stripe_secret_key",
             "stripe_webhook_secret",
             "replicate_api_token",
             "fal_key",
+            "oauth_google_client_secret",
+            "oauth_github_client_secret",
+            "oauth_apple_client_secret",
         ):
             if data.get(secret_key):
                 data[secret_key] = "***REDACTED***"

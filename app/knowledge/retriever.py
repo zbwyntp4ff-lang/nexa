@@ -5,13 +5,22 @@ above a similarity threshold, truncated to a configured character budget.
 """
 from __future__ import annotations
 from app.core.logging_config import get_logger
-from app.knowledge.embeddings import EmbeddingProvider
+from app.knowledge.embeddings import EmbeddingProvider, _tokenize
 from app.knowledge.models import Citation, RetrievalResult, RetrievedChunk
 from app.knowledge.vector_store import VectorStore
 logger = get_logger("nexa.knowledge.retriever")
 DEFAULT_TOP_K = 5
-DEFAULT_SIMILARITY_THRESHOLD = 0.15
+DEFAULT_SIMILARITY_THRESHOLD = 0.28
 DEFAULT_MAX_CONTEXT_CHARS = 6_000
+
+
+def _token_overlap(query: str, text: str) -> int:
+    """Count shared tokens (len>2) — filters hashing-embedding false positives."""
+    q = {t for t in _tokenize(query) if len(t) > 2}
+    if not q:
+        return 0
+    d = {t for t in _tokenize(text) if len(t) > 2}
+    return len(q & d)
 class Retriever:
     def __init__(
         self,
@@ -32,6 +41,7 @@ class Retriever:
         *,
         project_id: str | None = None,
         conversation_id: str | None = None,
+        user_id: str | None = None,
         top_k: int | None = None,
         similarity_threshold: float | None = None,
         max_context_chars: int | None = None,
@@ -44,14 +54,27 @@ class Retriever:
         k = top_k if top_k is not None else self.top_k
         threshold = similarity_threshold if similarity_threshold is not None else self.similarity_threshold
         budget = max_context_chars if max_context_chars is not None else self.max_context_chars
-        logger.info("retrieval_started query_len=%d project_id=%s", len(query), project_id or "-")
+        logger.info(
+            "retrieval_started query_len=%d project_id=%s user_id=%s",
+            len(query),
+            project_id or "-",
+            "set" if user_id else "-",
+        )
         query_vector = self._embeddings.embed(query)
         # Over-fetch a little so the score/threshold filter still leaves us
         # up to `k` results even if some higher-ranked candidates are cut.
         raw = self._vector_store.search(
-            query_vector, top_k=max(k * 2, k), project_id=project_id, conversation_id=conversation_id
+            query_vector,
+            top_k=max(k * 2, k),
+            project_id=project_id,
+            conversation_id=conversation_id,
+            user_id=user_id,
         )
-        filtered = [(chunk, score) for chunk, score in raw if score >= threshold][:k]
+        filtered = [
+            (chunk, score)
+            for chunk, score in raw
+            if score >= threshold and _token_overlap(query, chunk.text) >= 1
+        ][:k]
         if not filtered:
             logger.info("retrieval_completed matches=0")
             return RetrievalResult(chunks=[], citations=[], context_text="", insufficient=True)

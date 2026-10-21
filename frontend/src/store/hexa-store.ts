@@ -1,13 +1,21 @@
 "use client";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { HexaPhase } from "@/lib/hexa/speech";
+import { normalizeSttLang, type HexaPhase, type SttLang } from "@/lib/hexa/speech";
 
 export interface HexaTurn {
   id: string;
   role: "user" | "assistant";
   content: string;
   at: string;
+}
+
+export interface HexaTiming {
+  recognitionMs?: number;
+  requestMs?: number;
+  ttftMs?: number;
+  fullReplyMs?: number;
+  ttsStartMs?: number;
 }
 
 interface HexaState {
@@ -22,6 +30,13 @@ interface HexaState {
   showKeyboard: boolean;
   history: HexaTurn[];
   energy: number;
+  continuousMode: boolean;
+  autoSpeak: boolean;
+  sttLang: SttLang;
+  sttLangInitialized: boolean;
+  micMuted: boolean;
+  sessionArmed: boolean;
+  lastTiming: HexaTiming | null;
   setPhase: (p: HexaPhase) => void;
   setTranscript: (t: string) => void;
   setInterim: (t: string) => void;
@@ -32,13 +47,20 @@ interface HexaState {
   setPitch: (n: number) => void;
   setShowKeyboard: (v: boolean) => void;
   setEnergy: (n: number) => void;
+  setContinuousMode: (v: boolean) => void;
+  setAutoSpeak: (v: boolean) => void;
+  setSttLang: (lang: SttLang) => void;
+  setMicMuted: (v: boolean) => void;
+  setSessionArmed: (v: boolean) => void;
+  setLastTiming: (t: HexaTiming | null) => void;
+  seedSttLangFromUi: (uiLang: "en" | "ru") => void;
   pushTurn: (role: HexaTurn["role"], content: string) => void;
   clearHistory: () => void;
 }
 
 export const useHexaStore = create<HexaState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       phase: "idle",
       transcript: "",
       interim: "",
@@ -50,6 +72,13 @@ export const useHexaStore = create<HexaState>()(
       showKeyboard: false,
       history: [],
       energy: 0.2,
+      continuousMode: true,
+      autoSpeak: true,
+      sttLang: "en-US",
+      sttLangInitialized: false,
+      micMuted: false,
+      sessionArmed: false,
+      lastTiming: null,
       setPhase: (p) => set({ phase: p }),
       setTranscript: (t) => set({ transcript: t }),
       setInterim: (t) => set({ interim: t }),
@@ -60,6 +89,19 @@ export const useHexaStore = create<HexaState>()(
       setPitch: (n) => set({ pitch: n }),
       setShowKeyboard: (v) => set({ showKeyboard: v }),
       setEnergy: (n) => set({ energy: n }),
+      setContinuousMode: (v) => set({ continuousMode: v }),
+      setAutoSpeak: (v) => set({ autoSpeak: v }),
+      setSttLang: (lang) => set({ sttLang: normalizeSttLang(lang), sttLangInitialized: true }),
+      setMicMuted: (v) => set({ micMuted: v }),
+      setSessionArmed: (v) => set({ sessionArmed: v }),
+      setLastTiming: (t) => set({ lastTiming: t }),
+      seedSttLangFromUi: (uiLang) => {
+        if (get().sttLangInitialized) return;
+        set({
+          sttLang: uiLang === "ru" ? "ru-RU" : "en-US",
+          sttLangInitialized: true,
+        });
+      },
       pushTurn: (role, content) =>
         set((s) => ({
           history: [
@@ -81,7 +123,11 @@ export const useHexaStore = create<HexaState>()(
         rate: s.rate,
         pitch: s.pitch,
         history: s.history,
+        continuousMode: s.continuousMode,
+        autoSpeak: s.autoSpeak,
+        sttLang: s.sttLang,
+        sttLangInitialized: s.sttLangInitialized,
       }),
-    }
-  )
+    },
+  ),
 );

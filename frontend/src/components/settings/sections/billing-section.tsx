@@ -101,9 +101,23 @@ export function BillingSection() {
         <p className="mt-1 text-sm text-muted-foreground">
           {t("billing.nextPayment")}: {nextPayment}
         </p>
+        {data.provider_status && (
+          <p className="mt-3 text-xs text-muted-foreground" data-testid="billing-provider-status">
+            {t("billing.providerMode", {
+              provider: data.provider_status.provider,
+              mode: data.provider_status.mode,
+              activation: data.provider_status.activation,
+            })}
+          </p>
+        )}
         {!data.provider_configured && (
-          <p className="mt-3 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+          <p className="mt-2 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
             {t("billing.notConfigured")}
+          </p>
+        )}
+        {data.provider_configured && data.provider_status?.mode === "test" && (
+          <p className="mt-2 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+            {t("billing.providerTest")}
           </p>
         )}
         <div className="mt-4 flex flex-wrap gap-2">

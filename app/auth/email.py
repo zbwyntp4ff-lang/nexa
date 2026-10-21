@@ -26,14 +26,15 @@ class EmailService(ABC):
 
 
 class ConsoleEmailService(EmailService):
-    """Development provider: writes the message to the application log."""
+    """Development provider: writes a redacted notice to the application log."""
 
     def send(self, *, to: str, subject: str, text_body: str, html_body: str | None = None) -> None:
+        # Part 15: never log verification/reset codes (body often contains the 6-digit code).
         logger.info(
-            "email[console] to=%s subject=%s\n%s",
+            "email[console] to=%s subject=%s body_chars=%s (body omitted from logs)",
             to,
             subject,
-            text_body,
+            len(text_body or ""),
         )
 
 
@@ -87,6 +88,16 @@ def build_email_service(settings: Settings) -> EmailService:
     provider = (settings.email_provider or "console").strip().lower()
     if provider == "smtp":
         if not settings.smtp_host or not settings.email_from:
+            # Never silently "succeed" verification mail on a public host.
+            public = bool(getattr(settings, "nexa_public_beta", False))
+            durable = (settings.environment or "").strip().lower() == "production" and (
+                (settings.nexa_storage_mode or "").strip().lower() == "persistent"
+            )
+            if public or durable:
+                raise RuntimeError(
+                    "EMAIL_PROVIDER=smtp requires SMTP_HOST and EMAIL_FROM "
+                    "(refusing console fallback on public/cloud hosts)."
+                )
             logger.warning("EMAIL_PROVIDER=smtp but SMTP_HOST/EMAIL_FROM missing; using console")
             return ConsoleEmailService()
         return SmtpEmailService(

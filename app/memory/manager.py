@@ -73,12 +73,66 @@ class MemoryManager:
             user_id=user_id,
             limit=limit if limit is not None else self._default_search_limit,
         )
-    def delete(self, item_id: str) -> bool:
-        """Delete a memory item by id. Returns ``True`` if it existed."""
+    def delete(self, item_id: str, *, user_id: str | None = None) -> bool:
+        """Delete a memory item by id. Returns ``True`` if it existed.
+
+        When ``user_id`` is provided, only delete if the item belongs to that user
+        (or has no owner — legacy rows).
+        """
+        item = self._store.get(item_id)
+        if item is None:
+            return False
+        if user_id is not None and item.user_id not in (None, user_id):
+            raise MemoryItemNotFoundError(item_id)
         return self._store.delete(item_id)
-    def clear(self, type: MemoryType | None = None) -> int:
-        """Delete all memory items (optionally scoped to ``type``)."""
-        return self._store.clear(type=type)
+
+    def update(
+        self,
+        item_id: str,
+        *,
+        content: str | None = None,
+        tags: list[str] | None = None,
+        metadata: dict | None = None,
+        type: MemoryType | None = None,
+        user_id: str | None = None,
+    ) -> MemoryItem:
+        """Update an existing item; re-check secrets; preserve id/created_at."""
+        from datetime import datetime, timezone
+
+        item = self.get(item_id)
+        if user_id is not None and item.user_id not in (None, user_id):
+            raise MemoryItemNotFoundError(item_id)
+        new_content = content if content is not None else item.content
+        new_meta = metadata if metadata is not None else item.metadata
+        self._assert_no_secrets(new_content, new_meta)
+        updated = item.model_copy(
+            update={
+                "content": new_content,
+                "tags": tags if tags is not None else item.tags,
+                "metadata": new_meta,
+                "type": type if type is not None else item.type,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        )
+        return self._store.save(updated)
+
+    def clear(self, type: MemoryType | None = None, *, user_id: str | None = None) -> int:
+        """Delete memory items (optionally scoped to ``type`` and/or ``user_id``)."""
+        if user_id is None:
+            return self._store.clear(type=type)
+        clear_user = getattr(self._store, "clear_user", None)
+        if callable(clear_user):
+            return int(clear_user(user_id, type))
+        results = self.search(query="", type=type, user_id=user_id, limit=10000)
+        count = 0
+        for hit in results:
+            if self._store.delete(hit.item.id):
+                count += 1
+        return count
+
+    def clear_for_user(self, user_id: str) -> int:
+        """Delete all memory belonging to ``user_id``."""
+        return self.clear(user_id=user_id)
     # --- convenience helpers ------------------------------------------------
     def remember_turn(self, role: str, content: str, conversation_id: str | None = None) -> MemoryItem:
         """Store one conversation turn as :data:`MemoryType.CONVERSATION`."""
@@ -111,7 +165,18 @@ def get_memory_manager() -> MemoryManager:
     Tests that need isolation should call ``get_memory_manager.cache_clear()``
     or construct a ``MemoryManager`` directly with an
     :class:`app.memory.store.InMemoryStore`.
+
+    Backend: ``MEMORY_BACKEND=sql`` (default) uses ``DATABASE_URL``;
+    ``MEMORY_BACKEND=json`` keeps the legacy file store.
     """
     settings = get_settings()
-    store = LocalMemoryStore(resolve_under_project_root(settings.memory_store_path))
+    backend = (getattr(settings, "memory_backend", None) or "sql").strip().lower()
+    if backend == "json":
+        store = LocalMemoryStore(resolve_under_project_root(settings.memory_store_path))
+    else:
+        from app.db.engine import get_database
+        from app.memory.sql_store import SqlMemoryStore
+
+        get_database().migrate()
+        store = SqlMemoryStore(get_database())
     return MemoryManager(store, default_search_limit=settings.memory_search_limit)

@@ -12,12 +12,14 @@ class EditPlan:
     features_added: list[str] | None = None
 
 
-_ENEMIES = re.compile(r"враг|enemy|enemies", re.IGNORECASE)
+_ENEMIES = re.compile(r"враг|enemy|enemies|rival|соперник", re.IGNORECASE)
 _PRETTIER = re.compile(r"красивее|красив|prettier|beautiful|style|дизайн", re.IGNORECASE)
 _MUSIC = re.compile(r"музык|music|звук|sound", re.IGNORECASE)
 _SHOP = re.compile(r"магазин|shop|store", re.IGNORECASE)
 _SCORE = re.compile(r"очк|score|систем\w*\s+очк", re.IGNORECASE)
 _GAME_OVER = re.compile(r"game\s*over|гейм\s*овер|конец\s*игр", re.IGNORECASE)
+_BIGGER_MAP = re.compile(r"больше\s*(карт|мир|map|world)|bigger\s*(map|world)|увелич\w*\s*(карт|мир)", re.IGNORECASE)
+_MORE_RIVALS = re.compile(r"добав\w*\s*(соперник|rival|враг)|more\s*(rival|enem)", re.IGNORECASE)
 
 
 _SCORE_JS_SNIPPET = """
@@ -60,7 +62,9 @@ def plan_followup_edits(message: str, *, current_files: dict[str, str]) -> EditP
     notes: list[str] = []
     features: list[str] = []
 
-    if _ENEMIES.search(text) and main_js:
+    is_three = "THREE" in main_js or "WebGLRenderer" in main_js
+
+    if (_ENEMIES.search(text) or _MORE_RIVALS.search(text)) and main_js:
         if "window.__NEXA_ENEMIES__" in main_js:
             patched = out.get("main.js", main_js)
             patched = re.sub(
@@ -73,8 +77,36 @@ def plan_followup_edits(message: str, *, current_files: dict[str, str]) -> EditP
             out["main.js"] = patched
             notes.append("добавлены враги")
             features.append("enemies")
-        else:
+        elif is_three and "rivals" in main_js and "/* nexa-extra-rival */" not in main_js:
+            # Append one more rival car for Three.js racing scaffold
+            patched = out.get("main.js", main_js)
+            patched = patched.replace(
+                "const rivals = [",
+                "const rivals = [\n    /* nexa-extra-rival */\n",
+            )
+            if "makeCar(0x88ff88" not in patched:
+                patched = patched.replace(
+                    "makeCar(0xc44dff, -2, 35),\n  ];",
+                    "makeCar(0xc44dff, -2, 35),\n    makeCar(0x88ff88, 2, 20),\n  ];",
+                )
+            out["main.js"] = patched
+            notes.append("добавлен соперник в 3D гонке")
+            features.append("rivals")
+        elif not is_three:
             return None
+
+    if _BIGGER_MAP.search(text) and is_three and main_js:
+        js = out.get("main.js", main_js)
+        if "/* nexa-bigger-map */" not in js:
+            js = "/* nexa-bigger-map */\n" + js
+            js = js.replace("BoxGeometry(18, 0.4, 220)", "BoxGeometry(22, 0.4, 320)")
+            js = js.replace("BoxGeometry(0.6, 1.2, 220)", "BoxGeometry(0.6, 1.2, 320)")
+            js = js.replace("PlaneGeometry(800, 800)", "PlaneGeometry(1200, 1200)")
+            js = js.replace("PlaneGeometry(120, 120)", "PlaneGeometry(180, 180)")
+            js = js.replace("CircleGeometry(40, 48)", "CircleGeometry(55, 48)")
+            out["main.js"] = js
+            notes.append("увеличена карта 3D")
+            features.append("bigger_map")
 
     if _SCORE.search(text) and (main_js or index_html):
         js = out.get("main.js", main_js)

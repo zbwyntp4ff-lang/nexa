@@ -89,7 +89,16 @@ class AttachmentManager:
         if stored and stored.temp_path and stored.temp_path.exists():
             stored.temp_path.unlink(missing_ok=True)
     # --- upload pipeline -------------------------------------------------------
-    async def upload(self, filename: str, raw: bytes) -> AttachmentRecord:
+    def _owned(self, stored: _Stored, user_id: str | None) -> bool:
+        """True when ``user_id`` may access the record (None = no ownership filter)."""
+        if user_id is None:
+            return True
+        owner = stored.record.user_id
+        return owner is None or owner == user_id
+
+    async def upload(
+        self, filename: str, raw: bytes, *, user_id: str | None = None
+    ) -> AttachmentRecord:
         """Run the full pipeline for one uploaded file and return its public record."""
         self.cleanup_expired()
         extension, kind, mime_type = validate_upload(filename, raw, max_size_bytes=self._max_size_bytes)
@@ -104,6 +113,7 @@ class AttachmentManager:
             kind=kind,
             status=AttachmentStatus.PROCESSING,
             expires_at=expires_at,
+            user_id=user_id,
         )
         stored = _Stored(record=record, extension=extension)
         self._records[attachment_id] = stored
@@ -166,40 +176,60 @@ class AttachmentManager:
         stored.record.error = message
         logger.warning("attachment failed id=%s error=%s", stored.record.id, message)
     # --- retrieval -------------------------------------------------------------
-    def get(self, attachment_id: str) -> AttachmentRecord:
+    def get(self, attachment_id: str, *, user_id: str | None = None) -> AttachmentRecord:
         self.cleanup_expired()
         stored = self._records.get(attachment_id)
-        if stored is None:
+        if stored is None or not self._owned(stored, user_id):
             raise AttachmentNotFoundError(attachment_id)
         return stored.record.model_copy()
-    def get_text(self, attachment_id: str) -> str:
+    def get_text(self, attachment_id: str, *, user_id: str | None = None) -> str:
         """Return the full (already size-bounded) extracted text for one document.
         Raises:
             app.models.errors.AttachmentNotFoundError: If the id is unknown/expired.
         """
         self.cleanup_expired()
         stored = self._records.get(attachment_id)
-        if stored is None:
+        if stored is None or not self._owned(stored, user_id):
             raise AttachmentNotFoundError(attachment_id)
         return stored.text or ""
-    def list(self) -> list[AttachmentRecord]:
+    def list(self, *, user_id: str | None = None) -> list[AttachmentRecord]:
         self.cleanup_expired()
-        return [stored.record.model_copy() for stored in self._records.values()]
-    def delete(self, attachment_id: str) -> None:
+        return [
+            stored.record.model_copy()
+            for stored in self._records.values()
+            if self._owned(stored, user_id)
+        ]
+    def delete(self, attachment_id: str, *, user_id: str | None = None) -> None:
         self.cleanup_expired()
-        if attachment_id not in self._records:
+        stored = self._records.get(attachment_id)
+        if stored is None or not self._owned(stored, user_id):
             raise AttachmentNotFoundError(attachment_id)
         self._discard(attachment_id)
-    def resolve_ids(self, attachment_ids: list[str]) -> list[AttachmentRecord]:
+
+    def delete_user(self, user_id: str) -> int:
+        """Remove all attachments owned by ``user_id``. Returns count deleted."""
+        ids = [
+            aid
+            for aid, stored in self._records.items()
+            if stored.record.user_id == user_id
+        ]
+        for aid in ids:
+            self._discard(aid)
+        return len(ids)
+
+    def resolve_ids(
+        self, attachment_ids: list[str], *, user_id: str | None = None
+    ) -> list[AttachmentRecord]:
         """Return ready records for ``attachment_ids``, in the given order.
         Raises:
-            app.models.errors.AttachmentNotFoundError: If any id is unknown/expired.
+            app.models.errors.AttachmentNotFoundError: If any id is unknown/expired
+            or not owned by ``user_id`` when that filter is set.
         """
         self.cleanup_expired()
         records: list[AttachmentRecord] = []
         for attachment_id in attachment_ids:
             stored = self._records.get(attachment_id)
-            if stored is None:
+            if stored is None or not self._owned(stored, user_id):
                 raise AttachmentNotFoundError(attachment_id)
             records.append(stored.record)
         return records

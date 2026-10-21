@@ -9,14 +9,9 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { ApiError, checkModel, getGatewayModels, updateModelSelection } from "@/lib/api";
 import { useT } from "@/lib/i18n";
+import { providerLabel, SELECTABLE_PROVIDERS } from "@/lib/provider-labels";
 import type { GatewayModelCard, GatewayModelsResponse } from "@/lib/types";
-const PROVIDERS = ["auto", "openai", "anthropic", "ollama"] as const;
-function providerLabel(provider: string): string {
-  if (provider === "openai") return "OpenAI";
-  if (provider === "anthropic") return "Anthropic";
-  if (provider === "ollama") return "Ollama";
-  return provider;
-}
+const PROVIDERS = SELECTABLE_PROVIDERS;
 export function ModelsSection() {
   const t = useT();
   const [state, setState] = React.useState<"loading" | "ready" | "error">("loading");
@@ -215,6 +210,23 @@ export function ModelsSection() {
               {checking ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : t("models.check")}
             </Button>
             <p className="text-xs text-muted-foreground">{t("models.keysStay")}</p>
+          </div>
+          {provider === "auto" && (
+            <p className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+              {t("models.autoHint")}
+            </p>
+          )}
+          <div className="rounded-lg border border-border p-3 text-xs text-muted-foreground space-y-1.5">
+            <p className="font-medium text-foreground">{t("models.keysTitle")}</p>
+            <p>{t("models.keysHow")}</p>
+            <ul className="list-inside list-disc space-y-0.5">
+              <li>OpenAI → <code className="text-[11px]">OPENAI_API_KEY</code></li>
+              <li>Anthropic → <code className="text-[11px]">ANTHROPIC_API_KEY</code></li>
+              <li>Gemini → <code className="text-[11px]">GEMINI_API_KEY</code></li>
+              <li>OpenRouter → <code className="text-[11px]">OPENROUTER_API_KEY</code></li>
+              <li>Ollama → local server, no cloud key</li>
+            </ul>
+            <p>{t("models.keysStay")}</p>
           </div>
         </>
       )}

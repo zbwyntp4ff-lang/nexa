@@ -4,12 +4,22 @@
  * frontend file - the backend alone holds provider credentials.
  */
 import type { AgentStepView, BackendStatus, GatewayModelCard, GatewayModelsResponse, ModelInfo } from "./types";
+import { authHeaders } from "./session-token";
 // Undefined → local backend. Empty string → same-origin (production behind Caddy).
+// Prefer 127.0.0.1 so Electron (static on 127.0.0.1:48420) stays same-site with the API cookie.
 const _apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
-export const API_BASE_URL =
-  _apiBase === undefined
-    ? "http://localhost:8420"
-    : _apiBase.replace(/\/$/, "");
+function resolveApiBase(): string {
+  if (_apiBase && _apiBase.trim()) return _apiBase.replace(/\/$/, "");
+  if (typeof window !== "undefined") {
+    const port = window.location.port;
+    // Next.js (dev/start) proxies /api → FastAPI. Electron static on 48420 does not.
+    if (port === "4820" || port === "3000") return "";
+    if (port === "48420") return "http://127.0.0.1:8420";
+  }
+  if (_apiBase === "") return "";
+  return "http://127.0.0.1:8420";
+}
+export const API_BASE_URL = resolveApiBase();
 export class ApiError extends Error {
   status: number;
   code: string;
@@ -28,10 +38,10 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
       credentials: "include",
-      headers: {
+      headers: authHeaders({
         "Content-Type": "application/json",
         ...(init?.headers ?? {}),
-      },
+      }),
     });
   } catch (cause) {
     if ((cause as Error)?.name === "AbortError") throw cause;
@@ -57,7 +67,10 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 export function getHealth(signal?: AbortSignal) {
-  return request<{ status: string }>("/health", { signal });
+  return request<{ status: string; version?: string; storage_mode?: string }>(
+    "/health",
+    { signal }
+  );
 }
 export function getStatus(signal?: AbortSignal) {
   return request<BackendStatus>("/api/v1/status", { signal });
@@ -69,6 +82,14 @@ export interface ChatApiMessage {
   role: "user" | "assistant" | "system";
   content: string;
 }
+export interface ChatCitationApi {
+  index: number;
+  document_id: string;
+  filename: string;
+  source: string;
+  page?: number | null;
+  section?: string | null;
+}
 export interface ChatApiResponse {
   message: string;
   provider: string;
@@ -76,8 +97,14 @@ export interface ChatApiResponse {
   display_name?: string | null;
   fallback_used?: boolean;
   fallback_from?: string | null;
+  task_kind?: string | null;
+  selection_mode?: string | null;
   attachments_used?: string[];
+  citations?: ChatCitationApi[];
+  knowledge_used?: boolean;
   latency_ms: number;
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
   created_at: string;
 }
 export function sendChat(
@@ -87,6 +114,11 @@ export function sendChat(
   options?: {
     task?: string;
     attachmentIds?: string[];
+    applyPersonalization?: boolean;
+    projectPersonalization?: Record<string, unknown> | null;
+    useKnowledgeBase?: boolean;
+    knowledgeConversationId?: string;
+    knowledgeProjectId?: string;
     onDelta?: (chunk: string) => void;
     onFirstToken?: (ttftMs: number) => void;
   },
@@ -101,6 +133,11 @@ export async function streamChat(
   options?: {
     task?: string;
     attachmentIds?: string[];
+    applyPersonalization?: boolean;
+    projectPersonalization?: Record<string, unknown> | null;
+    useKnowledgeBase?: boolean;
+    knowledgeConversationId?: string;
+    knowledgeProjectId?: string;
     onDelta?: (chunk: string) => void;
     onFirstToken?: (ttftMs: number) => void;
   },
@@ -112,12 +149,26 @@ export async function streamChat(
       method: "POST",
       signal,
       credentials: "include",
-      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      headers: authHeaders({
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      }),
       body: JSON.stringify({
         message,
         history,
         task: options?.task,
         attachment_ids: options?.attachmentIds ?? [],
+        apply_personalization: options?.applyPersonalization ?? true,
+        project_personalization: options?.projectPersonalization ?? null,
+        ...(options?.useKnowledgeBase != null
+          ? { use_knowledge_base: options.useKnowledgeBase }
+          : {}),
+        ...(options?.knowledgeConversationId
+          ? { knowledge_conversation_id: options.knowledgeConversationId }
+          : {}),
+        ...(options?.knowledgeProjectId
+          ? { knowledge_project_id: options.knowledgeProjectId }
+          : {}),
       }),
     });
   } catch (cause) {
@@ -163,8 +214,12 @@ export async function streamChat(
         display_name?: string | null;
         fallback_used?: boolean;
         fallback_from?: string | null;
+        task_kind?: string | null;
+        selection_mode?: string | null;
         ttft_ms?: number | null;
         total_ms?: number | null;
+        citations?: ChatCitationApi[];
+        knowledge_used?: boolean;
       };
       if (event.type === "error") {
         throw new ApiError(502, event.error ?? "ModelError", event.message ?? "The model failed.");
@@ -186,6 +241,10 @@ export async function streamChat(
           display_name: event.display_name,
           fallback_used: event.fallback_used,
           fallback_from: event.fallback_from,
+          task_kind: event.task_kind,
+          selection_mode: event.selection_mode,
+          citations: event.citations,
+          knowledge_used: event.knowledge_used,
         };
       }
     }
@@ -197,6 +256,10 @@ export async function streamChat(
     display_name: donePayload.display_name,
     fallback_used: donePayload.fallback_used,
     fallback_from: donePayload.fallback_from,
+    task_kind: donePayload.task_kind,
+    selection_mode: donePayload.selection_mode,
+    citations: donePayload.citations,
+    knowledge_used: donePayload.knowledge_used,
     latency_ms: Math.round(performance.now() - started),
     ttft_ms: serverTtft ?? clientTtft,
     total_ms: serverTotal ?? Math.round(performance.now() - started),
@@ -305,11 +368,15 @@ export function isBuildProjectIntent(text: string, hasActiveBuildProject = false
     return false;
   }
   const isNew =
-    /(создай|сделай|собери|напиши)\s+(мне\s+)?(?:\S+\s+){0,4}(игру|игрушку|сайт|приложен\w*|инструмент|прототип|программ\w*|проект|api|бот)/i.test(
+    /(создай|сделай|собери|напиши)\s+(мне\s+)?(?:\S+\s+){0,4}(игру|игрушку|гонку|гоночн\w*|сайт|приложен\w*|инструмент|прототип|программ\w*|проект|api|бот|3\s*d|three\.?js|танк\w*|пол[её]т\w*|приключен\w*)/i.test(
       stripped,
     ) ||
-    /create\s+(an?\s+|me\s+a\s+)?(?:\S+\s+){0,4}(app|game|website|site|tool|prototype|program|project)/i.test(stripped) ||
-    /build\s+(an?\s+|me\s+a\s+)?(?:\S+\s+){0,4}(app|game|website|site|tool|project)/i.test(stripped) ||
+    /create\s+(an?\s+|me\s+a\s+)?(?:\S+\s+){0,4}(app|game|website|site|tool|prototype|program|project|racing|racer|flight|tank|adventure)/i.test(
+      stripped,
+    ) ||
+    /build\s+(an?\s+|me\s+a\s+)?(?:\S+\s+){0,4}(app|game|website|site|tool|project|racing|racer|flight|tank)/i.test(
+      stripped,
+    ) ||
     /(сделай|создай)\s+мне\b/i.test(stripped) ||
     /и\s+запусти/i.test(stripped) ||
     /working\s+project|полный\s+проект/i.test(stripped);
@@ -318,7 +385,7 @@ export function isBuildProjectIntent(text: string, hasActiveBuildProject = false
   return (
     /^(добавь|измени|исправь|улучши|сделай(?:\s+\S+){0,4}\s+(красивее|быстрее|больше)|add\s+|change\s+|fix\s+|improve\s+|make\s+(it\s+)?|поменяй|увеличь|уменьши|перепиши)/i.test(
       stripped,
-    ) || /(game\s*over|систем\w*\s+очк|очк\w*|score)/i.test(stripped)
+    ) || /(game\s*over|систем\w*\s+очк|очк\w*|score|rival|соперник|карт\w*|bigger\s*map)/i.test(stripped)
   );
 }
 
@@ -341,6 +408,40 @@ export function resolveBuildPreviewUrl(previewPath: string | null | undefined): 
   if (!previewPath) return null;
   if (/^https?:\/\//i.test(previewPath)) return previewPath;
   return `${API_BASE_URL}${previewPath.startsWith("/") ? "" : "/"}${previewPath}`;
+}
+
+export interface BuildProjectApi {
+  project_id: string;
+  slug: string;
+  title: string;
+  status: string;
+  entry_file: string;
+  files: string[];
+  preview_url: string | null;
+  stack: string | null;
+  features: string[];
+  root_rel: string;
+}
+
+export function getBuildProject(projectId: string, signal?: AbortSignal) {
+  return request<BuildProjectApi>(`/api/v1/build/projects/${projectId}`, { signal });
+}
+
+export function resolveBuildExportUrl(projectId: string): string {
+  return `${API_BASE_URL}/api/v1/build/export/${projectId}`;
+}
+
+/** Fetch a preview file as text (same sandbox as iframe). */
+export async function fetchBuildPreviewText(
+  projectId: string,
+  filePath: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const url = resolveBuildPreviewUrl(`/api/v1/build/preview/${projectId}/${filePath}`);
+  if (!url) throw new ApiError(0, "PreviewError", "Missing preview URL");
+  const res = await fetch(url, { signal, credentials: "include" });
+  if (!res.ok) throw new ApiError(res.status, "PreviewError", `Preview fetch failed: ${filePath}`);
+  return res.text();
 }
 
 export function startImageToVideo(prompt: string, attachmentIds: string[], signal?: AbortSignal) {
@@ -397,6 +498,34 @@ export interface AgentApiResponse {
   provider?: string | null;
   model?: string | null;
   display_name?: string | null;
+  project_status?: string | null;
+  project_id?: string | null;
+  project_manifest?: Record<string, unknown> | null;
+  partial_success?: boolean;
+}
+
+/** Collect verified download links from agent tool outputs (never invent URLs). */
+export function extractAgentDownloadLinks(response: AgentApiResponse): {
+  filename: string;
+  download_url: string;
+  file_id?: string;
+}[] {
+  const links: { filename: string; download_url: string; file_id?: string }[] = [];
+  const seen = new Set<string>();
+  for (const step of response.steps) {
+    if (!step.success || !step.output || typeof step.output !== "object") continue;
+    const out = step.output as Record<string, unknown>;
+    const url = typeof out.download_url === "string" ? out.download_url : "";
+    if (!url.startsWith("/api/v1/results/")) continue;
+    if (seen.has(url)) continue;
+    seen.add(url);
+    links.push({
+      filename: typeof out.filename === "string" ? out.filename : "file",
+      download_url: url,
+      file_id: typeof out.file_id === "string" ? out.file_id : undefined,
+    });
+  }
+  return links;
 }
 export function runAgent(
   task: string,
@@ -453,12 +582,40 @@ export function listMemory(
   const qs = search.toString();
   return request<MemorySearchResponse>(`/api/v1/memory${qs ? `?${qs}` : ""}`, { signal });
 }
+export interface MemoryCreateResultApi {
+  item: MemoryItemApi | null;
+  saved: boolean;
+  contradictions: {
+    existing_id: string;
+    existing_content: string;
+    new_content: string;
+    reason: string;
+  }[];
+}
 export function createMemory(
-  item: { content: string; type?: string; tags?: string[]; metadata?: Record<string, unknown> },
+  item: {
+    content: string;
+    type?: string;
+    tags?: string[];
+    metadata?: Record<string, unknown>;
+    force?: boolean;
+    replace_id?: string;
+  },
   signal?: AbortSignal
 ) {
-  return request<MemoryItemApi>("/api/v1/memory", {
+  return request<MemoryCreateResultApi>("/api/v1/memory", {
     method: "POST",
+    body: JSON.stringify(item),
+    signal,
+  });
+}
+export function updateMemory(
+  id: string,
+  item: { content?: string; type?: string; tags?: string[]; metadata?: Record<string, unknown> },
+  signal?: AbortSignal,
+) {
+  return request<MemoryItemApi>(`/api/v1/memory/${encodeURIComponent(id)}`, {
+    method: "PATCH",
     body: JSON.stringify(item),
     signal,
   });
@@ -500,6 +657,7 @@ export async function uploadKnowledgeDocument(file: File, projectId?: string) {
       method: "POST",
       body: formData,
       credentials: "include",
+      headers: authHeaders(),
     });
   } catch {
     throw new ApiError(0, "NetworkError", "Could not reach the NEXA backend. Is it running?");
@@ -571,4 +729,90 @@ export function createWorkflow(goal: string, autonomy: string, name?: string) {
 }
 export function workflowAction(id: string, action: "start" | "pause" | "resume" | "cancel" | "approve" | "reject") {
   return request<WorkflowApi>(`/api/v1/workflows/${encodeURIComponent(id)}/${action}`, { method: "POST" });
+}
+
+export interface PluginActionApi {
+  name: string;
+  description: string;
+  permissions: string[];
+  dangerous: boolean;
+  input_schema: Record<string, unknown>;
+}
+
+export interface PluginCardApi {
+  id: string;
+  version: string;
+  name: string;
+  description: string;
+  category: string;
+  integration_type: string;
+  dependencies: string[];
+  required_permissions: string[];
+  optional_permissions: string[];
+  timeout_seconds: number;
+  actions: PluginActionApi[];
+  install_hint: string;
+  status: string;
+  enabled: boolean;
+  granted_permissions: string[];
+  settings: Record<string, unknown>;
+  has_token: boolean;
+  last_error: string | null;
+  last_probe: string | null;
+  connected_at: string | null;
+}
+
+export function listHubPlugins(query = "", category = "", signal?: AbortSignal) {
+  const params = new URLSearchParams();
+  if (query) params.set("q", query);
+  if (category) params.set("category", category);
+  const qs = params.toString();
+  return request<{ plugins: PluginCardApi[]; count: number }>(
+    `/api/v1/plugins${qs ? `?${qs}` : ""}`,
+    { signal },
+  );
+}
+
+export function getHubPlugin(id: string, signal?: AbortSignal) {
+  return request<PluginCardApi>(`/api/v1/plugins/${encodeURIComponent(id)}`, { signal });
+}
+
+export function connectHubPlugin(
+  id: string,
+  body: { permissions?: string[]; token?: string; settings?: Record<string, unknown> },
+) {
+  return request<PluginCardApi>(`/api/v1/plugins/${encodeURIComponent(id)}/connect`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function disconnectHubPlugin(id: string) {
+  return request<PluginCardApi>(`/api/v1/plugins/${encodeURIComponent(id)}/disconnect`, {
+    method: "POST",
+  });
+}
+
+export function diagnoseHubPlugin(id: string) {
+  return request<{ plugin_id: string; probe: Record<string, unknown> }>(
+    `/api/v1/plugins/${encodeURIComponent(id)}/diagnose`,
+    { method: "POST" },
+  );
+}
+
+export function invokeHubPlugin(
+  id: string,
+  body: { action: string; params?: Record<string, unknown>; confirm?: boolean },
+) {
+  return request<{ plugin_id: string; result: { success: boolean; output: unknown; error: string | null } }>(
+    `/api/v1/plugins/${encodeURIComponent(id)}/invoke`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+export function patchHubPluginPermissions(id: string, permissions: string[]) {
+  return request<PluginCardApi>(`/api/v1/plugins/${encodeURIComponent(id)}/permissions`, {
+    method: "PATCH",
+    body: JSON.stringify({ permissions }),
+  });
 }

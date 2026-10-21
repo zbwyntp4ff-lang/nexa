@@ -64,6 +64,7 @@ export function ProjectPanel() {
             <TabsTrigger value="files">{t("project.files")}</TabsTrigger>
             <TabsTrigger value="memory">{t("project.memory")}</TabsTrigger>
             <TabsTrigger value="instructions">{t("project.instructions")}</TabsTrigger>
+            <TabsTrigger value="personalization">{t("project.personalization")}</TabsTrigger>
           </TabsList>
           <TabsContent value="conversations" className="min-h-0 flex-1 overflow-y-auto nexa-scrollbar">
             <Button size="sm" variant="outline" className="mb-2" onClick={handleNewChat}>
@@ -119,6 +120,71 @@ export function ProjectPanel() {
               aria-label={t("project.instructions")}
             />
           </TabsContent>
+          <TabsContent value="personalization" className="min-h-0 flex-1 space-y-3 overflow-y-auto nexa-scrollbar">
+            <p className="text-xs text-muted-foreground">{t("personalization.desc")}</p>
+            <label className="flex flex-col gap-1 text-sm">
+              <span>{t("project.prefModel")}</span>
+              <Input
+                value={project.personalization?.preferredModel ?? ""}
+                onChange={(e) =>
+                  updateProject(project.id, {
+                    personalization: { ...project.personalization, preferredModel: e.target.value || null },
+                  })
+                }
+                className="h-9"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <span>{t("project.prefStyle")}</span>
+              <select
+                className="h-9 rounded-lg border border-input bg-transparent px-2 text-sm"
+                value={project.personalization?.responseStyle ?? ""}
+                onChange={(e) =>
+                  updateProject(project.id, {
+                    personalization: {
+                      ...project.personalization,
+                      responseStyle: (e.target.value || null) as
+                        | "concise"
+                        | "balanced"
+                        | "detailed"
+                        | "technical"
+                        | null,
+                    },
+                  })
+                }
+              >
+                <option value="">—</option>
+                <option value="concise">concise</option>
+                <option value="balanced">balanced</option>
+                <option value="detailed">detailed</option>
+                <option value="technical">technical</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <span>{t("project.prefLang")}</span>
+              <Input
+                value={project.personalization?.aiLanguage ?? ""}
+                onChange={(e) =>
+                  updateProject(project.id, {
+                    personalization: { ...project.personalization, aiLanguage: e.target.value || null },
+                  })
+                }
+                className="h-9"
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={project.personalization?.usePersonalContext !== false}
+                onChange={(e) =>
+                  updateProject(project.id, {
+                    personalization: { ...project.personalization, usePersonalContext: e.target.checked },
+                  })
+                }
+              />
+              {t("project.usePersonal")}
+            </label>
+          </TabsContent>
         </Tabs>
         <Button variant="ghost" size="sm" className="self-start text-destructive hover:text-destructive" onClick={() => { deleteProject(project.id); closeProjects(); }}>
           <Trash2 className="size-4" aria-hidden="true" /> {t("project.deleteProject")}
@@ -154,7 +220,16 @@ function ProjectMemoryTab({ projectId }: { projectId: string }) {
     if (!note.trim()) return;
     setSaving(true);
     try {
-      await createMemory({ content: note.trim(), type: "long_term", metadata: { project_id: projectId } });
+      const result = await createMemory({
+        content: note.trim(),
+        type: "long_term",
+        metadata: { project_id: projectId },
+        force: true,
+      });
+      if (!result.saved) {
+        setError("Could not save this memory item.");
+        return;
+      }
       setNote("");
       await load();
     } catch (err) {

@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
+      - name: Unit / security / planner / office / compound / phase5
+        env:
+          AI_PROVIDER: mock
+          TOKENS_ENFORCE: "false"
+          NEXA_LOCAL_DESKTOP: "1"
+        run: |
+          python -m pytest \
+            tests/test_phase5_reliability.py \
+            tests/test_phase6_beta.py \
+            tests/test_security_phase6_final.py \
+            tests/test_beta_release_gate.py \
+            tests/test_open_beta_readiness.py \
+            tests/test_desktop_phase4.py \
+            tests/test_compound_projects.py \
+            tests/test_office_tools.py \
+            tests/test_agent_planner.py \
+            tests/test_agent.py \
+            tests/test_knowledge_quality.py \
+            tests/test_knowledge_rag.py \
+            tests/test_security_part15.py \
+            tests/test_cloud_isolation.py \
+            -q --tb=short -m "not network"
+      - name: Write offline eval reports
+        env:
+          AI_PROVIDER: mock
+        run: |
+          python -c "from app.knowledge.eval_rag import write_rag_eval_report; print(write_rag_eval_report())"
+          python -c "from app.learning.eval_suite import write_eval_report; print(write_eval_report())"
+
+  electron-ipc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci
+      - run: npx vitest run electron/__tests__/packaging.test.js

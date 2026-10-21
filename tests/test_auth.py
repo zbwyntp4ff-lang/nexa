@@ -33,6 +33,7 @@ class CapturingEmail(EmailService):
 def auth_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     store_path = tmp_path / "auth.json"
     monkeypatch.setenv("AUTH_STORE_PATH", str(store_path))
+    monkeypatch.setenv("AUTH_LEGAL_DIR", str(tmp_path / "legal"))
     get_settings.cache_clear()
     get_auth_store.cache_clear()
     get_auth_service.cache_clear()
@@ -78,6 +79,73 @@ def _register(client: TestClient, email: str = "ada@nexa.test", username: str = 
     )
     assert response.status_code == 201, response.text
     return response.json()
+
+
+def test_providers_list_includes_device_and_passkey(auth_env):
+    client, _, _ = auth_env
+    response = client.get("/api/v1/auth/providers")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["device"]["enabled"] is True
+    # Part 15: passkey login stays disabled until WebAuthn signatures are verified.
+    assert data["passkey"]["enabled"] is False
+    assert data["password"]["enabled"] is True
+    assert {p["id"] for p in data["oauth"]} == {"google", "github", "apple"}
+
+
+def test_device_login_approve_and_poll(auth_env):
+    client, mail, _ = auth_env
+    _register(client)
+    code = mail.last_code()
+    client.post("/api/v1/auth/verify-email", json={"email": "ada@nexa.test", "code": code})
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "ada@nexa.test", "password": "Secret123"},
+    )
+    assert login.status_code == 200
+
+    started = client.post("/api/v1/auth/device/start")
+    assert started.status_code == 200
+    body = started.json()
+    device_code = body["device_code"]
+    user_code = body["user_code"]
+
+    pending = client.post("/api/v1/auth/device/poll", json={"device_code": device_code})
+    assert pending.status_code == 428
+
+    approved = client.post("/api/v1/auth/device/approve", json={"user_code": user_code})
+    assert approved.status_code == 200, approved.text
+
+    # New client simulates the waiting desktop session
+    desktop = TestClient(app)
+    polled = desktop.post("/api/v1/auth/device/poll", json={"device_code": device_code})
+    assert polled.status_code == 200, polled.text
+    assert polled.json()["user"]["email"] == "ada@nexa.test"
+    me = desktop.get("/api/v1/auth/me")
+    assert me.status_code == 200
+
+
+def test_device_password_login_approves(auth_env):
+    client, mail, _ = auth_env
+    _register(client)
+    code = mail.last_code()
+    client.post("/api/v1/auth/verify-email", json={"email": "ada@nexa.test", "code": code})
+    started = client.post("/api/v1/auth/device/start")
+    body = started.json()
+    phone = TestClient(app)
+    approved = phone.post(
+        "/api/v1/auth/device/login",
+        json={
+            "email": "ada@nexa.test",
+            "password": "Secret123",
+            "user_code": body["user_code"],
+        },
+    )
+    assert approved.status_code == 200, approved.text
+    desktop = TestClient(app)
+    polled = desktop.post("/api/v1/auth/device/poll", json={"device_code": body["device_code"]})
+    assert polled.status_code == 200
+    assert polled.json()["user"]["email"] == "ada@nexa.test"
 
 
 def test_register_requires_consents(auth_env):
@@ -143,6 +211,15 @@ def test_full_auth_flow(auth_env):
     assert login.status_code == 200
     assert "nexa_session" in login.cookies
     assert login.json()["user"]["is_owner"] is True
+    assert login.json().get("session_token")
+
+    client.post("/api/v1/auth/logout")
+    login_username = client.post(
+        "/api/v1/auth/login",
+        json={"email": "ada", "password": "Secret123"},
+    )
+    assert login_username.status_code == 200
+    assert login_username.json()["user"]["username"] == "ada"
 
     me = client.get("/api/v1/auth/me")
     assert me.status_code == 200
@@ -151,6 +228,42 @@ def test_full_auth_flow(auth_env):
 
     logout = client.post("/api/v1/auth/logout")
     assert logout.status_code == 200
+    assert client.get("/api/v1/auth/me").status_code == 401
+
+
+def test_session_slides_on_activity_until_logout(auth_env):
+    """Active use renews expiry; logout still invalidates the session."""
+    from datetime import timedelta
+
+    from app.auth.models import utcnow
+
+    client, mail, service = auth_env
+    _register(client)
+    client.post(
+        "/api/v1/auth/verify-email",
+        json={"email": "ada@nexa.test", "code": mail.last_code()},
+    )
+    assert (
+        client.post(
+            "/api/v1/auth/login",
+            json={"email": "ada@nexa.test", "password": "Secret123"},
+        ).status_code
+        == 200
+    )
+    session = next(s for s in service._store._sessions.values() if s.revoked_at is None)
+    # Less than half of the 3600s test TTL → touch should renew.
+    near = utcnow() + timedelta(minutes=10)
+    session.expires_at = near
+    service._store.save_session(session)
+
+    me = client.get("/api/v1/auth/me")
+    assert me.status_code == 200
+    refreshed = service._store.get_session(session.id)
+    assert refreshed is not None
+    assert refreshed.expires_at > near
+    assert "nexa_session" in me.cookies
+
+    assert client.post("/api/v1/auth/logout").status_code == 200
     assert client.get("/api/v1/auth/me").status_code == 401
 
 
@@ -275,3 +388,91 @@ def test_password_not_stored_plaintext(auth_env):
     assert records
     assert len(records[0].code_hash) == 64
     assert records[0].code_hash != "123456"
+
+
+def test_device_start_includes_origin_and_qr(auth_env):
+    client, _, _ = auth_env
+    started = client.post(
+        "/api/v1/auth/device/start",
+        json={"origin": "http://localhost:4820"},
+    )
+    assert started.status_code == 200, started.text
+    body = started.json()
+    assert body["verification_uri_complete"].startswith("http://localhost:4820/auth/device?code=")
+    assert "qr_payload" in body
+    assert "qr_svg" in body
+    assert "/auth/device?code=" in body["qr_payload"]
+    page = client.get("/auth/device", params={"code": "ABC-DEF"})
+    assert page.status_code == 200
+    assert "Подтверждение NEXA" in page.text
+
+
+def test_legal_documents_endpoint(auth_env):
+    client, _, _ = auth_env
+    listing = client.get("/api/v1/auth/legal")
+    assert listing.status_code == 200
+    ids = {row["id"] for row in listing.json()["documents"]}
+    assert ids == {"terms_of_service", "privacy_policy", "license_agreement"}
+    assert listing.json()["holder"]["name"]
+    license_doc = client.get("/api/v1/auth/legal/license_agreement")
+    assert license_doc.status_code == 200
+    assert "NEXA" in license_doc.json()["body"]
+    assert "Правообладатель" in license_doc.json()["body"]
+
+
+def test_legal_holder_uses_owner_and_can_be_updated(auth_env):
+    client, mail, _ = auth_env
+    listing = client.get("/api/v1/auth/legal")
+    assert listing.json()["holder"]["kind"] == "individual"
+    _register(client)
+    client.post(
+        "/api/v1/auth/verify-email",
+        json={"email": "ada@nexa.test", "code": mail.last_code()},
+    )
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "ada@nexa.test", "password": "Secret123"},
+    )
+    assert login.status_code == 200
+    named = client.get("/api/v1/auth/legal")
+    assert named.json()["holder"]["name"] == "Ada Lovelace"
+    assert named.json()["holder"]["contact"] == "ada@nexa.test"
+    license_doc = client.get("/api/v1/auth/legal/license_agreement")
+    assert "Ada Lovelace" in license_doc.json()["body"]
+    saved = client.put(
+        "/api/v1/auth/legal/holder",
+        json={
+            "name": "ООО Некса",
+            "kind": "company",
+            "contact": "legal@nexa.test",
+            "inn": "7700000000",
+            "country": "RU",
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["holder"]["kind"] == "company"
+    assert saved.json()["holder"]["inn"] == "7700000000"
+    updated = client.get("/api/v1/auth/legal/license_agreement")
+    assert "ООО Некса" in updated.json()["body"]
+    assert "юридическое лицо" in updated.json()["body"]
+
+
+def test_google_oauth_file_enables_provider(tmp_path, monkeypatch):
+    from app.auth.credentials import save_google_oauth
+    from app.auth.oauth import list_provider_status
+    from app.config.settings import Settings
+
+    folder = tmp_path / "oauth"
+    settings = Settings.model_construct(
+        oauth_google_client_id=None,
+        oauth_google_client_secret=None,
+        oauth_github_client_id=None,
+        oauth_github_client_secret=None,
+        oauth_apple_client_id=None,
+        oauth_apple_client_secret=None,
+        oauth_credentials_dir=str(folder),
+    )
+    save_google_oauth(settings, "google-client-id.apps.googleusercontent.com", "google-secret-value")
+    status = {row["id"]: row["enabled"] for row in list_provider_status(settings)}
+    assert status["google"] is True
+    assert status["github"] is False

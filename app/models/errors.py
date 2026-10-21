@@ -178,6 +178,11 @@ class KnowledgeSourceNotAllowedError(NexaError):
 class KnowledgeIndexingTimeoutError(NexaError):
     """Raised when indexing a document exceeds the configured timeout."""
     default_message = "Indexing this document timed out."
+class FeatureDisabledError(NexaError):
+    default_message = "This feature is disabled on this server."
+    code = "FeatureDisabled"
+
+
 class WorkflowNotFoundError(NexaError):
     """Raised when a workflow id does not exist."""
     default_message = "Workflow not found."

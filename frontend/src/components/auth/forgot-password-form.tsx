@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api";
 import { codeFromPasteEvent, normalizeVerificationCode } from "@/lib/auth-code";
 import { useT } from "@/lib/i18n";
+import { normalizeEmailInput } from "@/lib/normalize-email";
+import { applyPasteToControlledInput } from "@/lib/paste-input";
 import { useAuthStore } from "@/store/auth-store";
 
 export function ForgotPasswordForm() {
@@ -19,9 +21,11 @@ export function ForgotPasswordForm() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    const cleanEmail = normalizeEmailInput(email);
+    setEmail(cleanEmail);
     setBusy(true);
     try {
-      await requestReset(email);
+      await requestReset(cleanEmail);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t("auth.errorGeneric"));
     } finally {
@@ -31,14 +35,18 @@ export function ForgotPasswordForm() {
 
   return (
     <AuthShell title={t("auth.forgotTitle")} subtitle={t("auth.forgotSubtitle")}>
-      <form className="space-y-4" onSubmit={onSubmit}>
+      <form className="space-y-4" noValidate onSubmit={onSubmit}>
         <AuthField label={t("auth.email")}>
           <Input
-            type="email"
+            type="text"
+            inputMode="email"
             required
             autoComplete="email"
+            spellCheck={false}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            onBlur={() => setEmail((v) => normalizeEmailInput(v))}
+            onPaste={(e) => applyPasteToControlledInput(e, setEmail, { normalizeEmail: true })}
             className="h-10"
           />
         </AuthField>
@@ -108,8 +116,10 @@ export function ResetPasswordForm() {
             type="password"
             required
             autoComplete="new-password"
+            spellCheck={false}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            onPaste={(e) => applyPasteToControlledInput(e, setPassword)}
             className="h-10"
           />
         </AuthField>
@@ -118,8 +128,10 @@ export function ResetPasswordForm() {
             type="password"
             required
             autoComplete="new-password"
+            spellCheck={false}
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
+            onPaste={(e) => applyPasteToControlledInput(e, setConfirm)}
             className="h-10"
           />
         </AuthField>

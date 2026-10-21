@@ -36,6 +36,14 @@ _KEY_MISSING_MESSAGES = {
         "Anthropic API key is not configured on the server. "
         "Set ANTHROPIC_API_KEY in the backend environment."
     ),
+    "gemini": (
+        "Gemini API key is not configured on the server. "
+        "Set GEMINI_API_KEY (or GOOGLE_API_KEY) in the backend environment."
+    ),
+    "openrouter": (
+        "OpenRouter API key is not configured on the server. "
+        "Set OPENROUTER_API_KEY in the backend environment."
+    ),
 }
 class GatewayError(NexaError):
     """A provider failure with a stable ``code``."""
@@ -137,10 +145,22 @@ def normalize_provider_error(
             provider=provider,
             model=model,
         )
-    if status == 404 or "notfound" in type_names or "model_not_found" in blob or "does not exist" in blob:
+    if (
+        status == 404
+        or "notfound" in type_names
+        or "model_not_found" in blob
+        or "does not exist" in blob
+        or "not available on this provider" in blob
+        or "unavailable for free" in blob
+    ):
+        hint = (
+            " Try openrouter/free or another :free model."
+            if (provider or "") == "openrouter"
+            else ""
+        )
         return GatewayError(
             MODEL_UNAVAILABLE,
-            "The requested model is not available on this provider.",
+            f"The requested model is not available on this provider.{hint}",
             provider=provider,
             model=model,
         )

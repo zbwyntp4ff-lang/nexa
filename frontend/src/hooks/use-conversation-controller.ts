@@ -10,6 +10,7 @@ import {
   researchChat,
   resolveBuildPreviewUrl,
   resolveMediaUrl,
+  extractAgentDownloadLinks,
   runAgent,
   runBuild,
   sendChat,
@@ -28,6 +29,7 @@ import {
 } from "@/lib/types";
 import { disabledToolNames, pluginGatingMode } from "@/lib/plugins";
 import { useChatStore } from "@/store/chat-store";
+import { isThreeBuild, useGameCreatorStore } from "@/store/game-creator-store";
 import { usePluginsStore } from "@/store/plugins-store";
 import { useUiStore } from "@/store/ui-store";
 
@@ -45,6 +47,7 @@ interface RunForModeResult {
   content: string;
   agentSteps?: ChatMessageView["agentSteps"];
   modelLabel?: string;
+  routing?: ChatMessageView["routing"];
   citations?: CitationView[];
   generatedImages?: GeneratedImageView[];
   generatedVideos?: GeneratedVideoView[];
@@ -61,14 +64,6 @@ function toHistory(messages: ChatMessageView[]): ChatApiMessage[] {
     .map((m) => ({ role: m.role, content: m.content }));
 }
 
-function isDebugLatencyEnabled(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    return window.localStorage.getItem("nexa-debug-latency") === "1";
-  } catch {
-    return false;
-  }
-}
 
 async function runImageToVideo(
   text: string,
@@ -124,13 +119,28 @@ export function useConversationController() {
       signal: AbortSignal,
       attachmentIds: string[],
       onDelta?: (chunk: string) => void,
+      projectPersonalization?: Record<string, unknown> | null,
+      scope?: { conversationId?: string; projectId?: string | null },
     ): Promise<RunForModeResult> => {
       if (mode === "agent") {
         setStatus("using_tool");
         const disabledTools = disabledToolNames(usePluginsStore.getState().enabled);
         const response = await runAgent(text, false, signal, attachmentIds, disabledTools);
+        let content = response.final_answer ?? "(Agent finished without a final answer.)";
+        const downloads = extractAgentDownloadLinks(response);
+        if (downloads.length > 0 && !content.includes("/api/v1/results/")) {
+          content +=
+            "\n\nFiles:\n" +
+            downloads.map((d) => `- ${d.filename}: ${d.download_url}`).join("\n");
+        }
+        if (response.partial_success) {
+          content += "\n\n(Partial success — some stages failed; see agent steps.)";
+        }
+        if (response.project_id) {
+          content += `\n\nProject: /api/v1/projects/${response.project_id}`;
+        }
         return {
-          content: response.final_answer ?? "(Agent finished without a final answer.)",
+          content,
           agentSteps: toAgentStepViews(response),
           modelLabel: response.display_name
             ? `${response.provider} · ${response.display_name}`
@@ -171,14 +181,47 @@ export function useConversationController() {
       const response = await sendChat(text, fullHistory, signal, {
         task: mode === "code" ? "coding" : undefined,
         attachmentIds,
+        // Server may also auto-enable RAG; send scope so retrieval stays relevant.
+        useKnowledgeBase: true,
+        knowledgeConversationId: scope?.conversationId,
+        knowledgeProjectId: scope?.projectId ?? undefined,
+        applyPersonalization: true,
+        projectPersonalization: projectPersonalization ?? null,
         onDelta,
       });
       const modelLabel = response.display_name
         ? `${response.provider} · ${response.display_name}${response.fallback_used ? " · fallback" : ""}`
+        : response.provider
+          ? `${response.provider} · ${response.model}${response.fallback_used ? " · fallback" : ""}`
+          : undefined;
+      const citations: CitationView[] | undefined = response.citations?.length
+        ? response.citations.map((c) => {
+            const page = c.page != null ? ` · p.${c.page}` : c.section ? ` · ${c.section}` : "";
+            const href =
+              c.source.startsWith("http://") || c.source.startsWith("https://")
+                ? c.source
+                : `#kb-${c.document_id}`;
+            return {
+              index: c.index,
+              url: href,
+              title: `${c.filename}${page}`,
+            };
+          })
         : undefined;
       return {
         content: response.message,
         modelLabel,
+        citations,
+        routing: {
+          provider: response.provider,
+          model: response.model,
+          taskKind: response.task_kind ?? undefined,
+          selectionMode: response.selection_mode ?? undefined,
+          fallbackUsed: response.fallback_used,
+          fallbackFrom: response.fallback_from ?? undefined,
+          promptTokens: response.prompt_tokens ?? undefined,
+          completionTokens: response.completion_tokens ?? undefined,
+        },
         latency: {
           ttftMs: response.ttft_ms,
           totalMs: response.total_ms ?? response.latency_ms,
@@ -290,11 +333,27 @@ export function useConversationController() {
           const preview = resolveBuildPreviewUrl(build.preview_url);
           const statusNote = build.status ? `\n\nСтатус: \`${build.status}\`` : "";
           const previewNote = preview ? `\n\n[Открыть preview](${preview})` : "";
+          const three = isThreeBuild({
+            stack: build.plan?.stack,
+            files: build.plan?.files,
+            message: trimmed,
+          });
+          if (three && build.success && build.project_id) {
+            useGameCreatorStore.getState().openGameCreator({
+              projectId: build.project_id,
+              previewUrl: build.preview_url,
+              title: build.plan?.name || build.slug || "3D Game",
+              files: build.plan?.files ?? [],
+              stack: build.plan?.stack ?? null,
+            });
+          }
+          const gameCreatorNote = three && build.success ? "\n\nGame Creator открыт." : "";
           result = {
             content:
               (build.message || (build.success ? "Проект готов." : "Сборка не удалась.")) +
               statusNote +
-              previewNote,
+              previewNote +
+              gameCreatorNote,
             modelLabel: build.engine_version === "v2" ? "NEXA · BUILD_PROJECT V2" : "NEXA · BUILD_PROJECT",
             agentSteps: build.steps.map((s, index) => ({
               index,
@@ -308,6 +367,18 @@ export function useConversationController() {
             })),
           };
         } else {
+          const project = conversation.projectId
+            ? useChatStore.getState().projects.find((p) => p.id === conversation.projectId)
+            : undefined;
+          const projectPersonalization = project
+            ? {
+                preferred_model: project.personalization?.preferredModel ?? null,
+                response_style: project.personalization?.responseStyle ?? null,
+                ai_language: project.personalization?.aiLanguage ?? null,
+                instructions: project.instructions || null,
+                use_personal_context: project.personalization?.usePersonalContext ?? null,
+              }
+            : null;
           result = await runForMode(
             mode,
             trimmed,
@@ -326,6 +397,8 @@ export function useConversationController() {
                 rafId = window.requestAnimationFrame(flushStream);
               }
             },
+            projectPersonalization,
+            { conversationId, projectId: conversation.projectId },
           );
           if (rafId) {
             window.cancelAnimationFrame(rafId);
@@ -336,13 +409,21 @@ export function useConversationController() {
           content: result.content,
           agentSteps: result.agentSteps,
           modelLabel: result.modelLabel,
+          routing: result.routing,
           citations: result.citations,
           generatedImages: result.generatedImages,
           generatedVideos: result.generatedVideos,
           progressLabel: undefined,
           pending: false,
-          latency: isDebugLatencyEnabled() ? result.latency : undefined,
+          // Always show verified latency when the backend/stream provided it.
+          latency: result.latency,
         });
+        void useChatStore.getState().pushConversation(conversationId);
+        if (result.routing?.fallbackUsed) {
+          toast.message(
+            `Switched provider after an error → ${result.modelLabel ?? "another model"}`,
+          );
+        }
         setStatus("online");
       } catch (error) {
         if ((error as Error)?.name === "AbortError") {
@@ -355,6 +436,16 @@ export function useConversationController() {
           const message = error instanceof ApiError ? error.message : "Something went wrong talking to NEXA.";
           updateMessage(conversationId, assistantId, { content: "", error: message, pending: false });
           setStatus("error");
+          if (
+            error instanceof ApiError &&
+            (error.code === "InsufficientTokens" ||
+              error.code === "DailyTokenLimitExceeded" ||
+              error.code === "MonthlyTokenLimitExceeded")
+          ) {
+            void import("@/store/plan-promo-store").then(({ usePlanPromoStore }) => {
+              usePlanPromoStore.getState().notifyTokenLimit();
+            });
+          }
         }
       } finally {
         setIsSending(false);

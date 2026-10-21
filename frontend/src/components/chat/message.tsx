@@ -13,12 +13,14 @@ import { useT } from "@/lib/i18n";
 import { MODE_GRADIENT } from "@/lib/mode-theme";
 import type { ChatMessageView } from "@/lib/types";
 export function Message({
-  message, onRetry, onEdit, onStop,
+  message, onRetry, onEdit, onStop, userRequest,
 }: {
   message: ChatMessageView;
   onRetry: () => void;
   onEdit: (newContent: string) => void;
   onStop: () => void;
+  /** Prior user turn — used only for optional answer feedback. */
+  userRequest?: string;
 }) {
   const t = useT();
   const [isEditing, setIsEditing] = React.useState(false);
@@ -44,11 +46,22 @@ export function Message({
         {!isUser && message.modelLabel && (
           <span className="text-[11px] text-muted-foreground">{t("chat.answeredBy", { model: message.modelLabel })}</span>
         )}
-        {!isUser && message.latency && (message.latency.ttftMs != null || message.latency.totalMs != null) && (
-          <span className="font-mono text-[10px] text-muted-foreground/80" title="Debug latency (localStorage nexa-debug-latency=1)">
-            TTFT {message.latency.ttftMs != null ? `${Math.round(message.latency.ttftMs)}ms` : "—"}
-            {" · "}
-            TOTAL {message.latency.totalMs != null ? `${Math.round(message.latency.totalMs)}ms` : "—"}
+        {!isUser && (message.routing?.taskKind || message.latency?.totalMs != null) && (
+          <span className="font-mono text-[10px] text-muted-foreground/80">
+            {message.routing?.selectionMode === "auto" && message.routing.taskKind
+              ? `auto · ${message.routing.taskKind}`
+              : message.routing?.selectionMode === "manual"
+                ? "manual"
+                : null}
+            {message.latency?.totalMs != null && (
+              <>
+                {(message.routing?.selectionMode || message.routing?.taskKind) ? " · " : null}
+                {Math.round(message.latency.totalMs)}ms
+              </>
+            )}
+            {message.routing?.promptTokens != null && message.routing?.completionTokens != null && (
+              <> · {message.routing.promptTokens}↑ {message.routing.completionTokens}↓ tok</>
+            )}
           </span>
         )}
         {isEditing ? (
@@ -154,20 +167,29 @@ export function Message({
                 )}
                 {message.citations && message.citations.length > 0 && (
                   <ol className="mt-2 flex flex-col gap-1 border-t border-border/60 pt-2 text-xs" aria-label={t("chat.sources")}>
-                    {message.citations.map((c) => (
-                      <li key={c.index} className="flex items-start gap-1.5 text-muted-foreground">
-                        <span className="shrink-0 font-medium">[{c.index}]</span>
-                        <a
-                          href={c.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex min-w-0 items-center gap-1 truncate hover:text-foreground hover:underline"
-                        >
-                          <span className="truncate">{c.title || c.url}</span>
-                          <ExternalLink className="size-3 shrink-0" aria-hidden="true" />
-                        </a>
-                      </li>
-                    ))}
+                    {message.citations.map((c) => {
+                      const external = c.url.startsWith("http://") || c.url.startsWith("https://");
+                      return (
+                        <li key={c.index} className="flex items-start gap-1.5 text-muted-foreground">
+                          <span className="shrink-0 font-medium">[{c.index}]</span>
+                          {external ? (
+                            <a
+                              href={c.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex min-w-0 items-center gap-1 truncate hover:text-foreground hover:underline"
+                            >
+                              <span className="truncate">{c.title || c.url}</span>
+                              <ExternalLink className="size-3 shrink-0" aria-hidden="true" />
+                            </a>
+                          ) : (
+                            <span className="truncate" title={c.url}>
+                              {c.title || c.url}
+                            </span>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ol>
                 )}
               </>
@@ -177,6 +199,8 @@ export function Message({
         {!isEditing && (
           <MessageActions
             content={message.content}
+            userRequest={!isUser ? userRequest : undefined}
+            messageId={message.id}
             canEdit={isUser}
             canRegenerate={!isUser && !message.pending}
             regenerateLabel={message.error ? t("chat.retry") : t("chat.regenerate")}

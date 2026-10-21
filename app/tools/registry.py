@@ -84,6 +84,30 @@ def build_default_registry() -> ToolRegistry:
     registry.register(FileCreateTool(sandbox_root))
     registry.register(FileRenameTool(sandbox_root))
     registry.register(DirectoryCreateTool(sandbox_root))
+    # Office generation + analysis (Phase 2): PPTX / DOCX / XLSX / PDF.
+    from app.tools.office import (
+        DocumentTool,
+        FileAnalysisTool,
+        PDFTool,
+        PresentationTool,
+        SpreadsheetTool,
+    )
+    from app.tools.office.result_store import ResultStore
+
+    result_store = ResultStore(sandbox_root)
+    registry.register(PresentationTool(result_store))
+    registry.register(DocumentTool(result_store))
+    registry.register(SpreadsheetTool(result_store))
+    registry.register(PDFTool(result_store))
+    registry.register(FileAnalysisTool(sandbox_root))
+    # Phase 4 — browser + allowlisted local files + open result (local desktop gated).
+    from app.tools.desktop import BrowserTool, LocalFileTool, OpenResultTool
+
+    registry.register(BrowserTool(sandbox_root))
+    registry.register(LocalFileTool(sandbox_root))
+    registry.register(OpenResultTool(sandbox_root, store=result_store))
+    # Expose store for download API (same sandbox as tools).
+    registry._result_store = result_store  # type: ignore[attr-defined]
     # Register the web research tool with a real search provider (Part 6A).
     from app.web.research_tool import ResearchTool
     search_provider = SearchProviderFactory.create(

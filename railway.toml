@@ -1,3 +1,7 @@
+# Railway Docker deploy. For durable public data: attach a volume at /app/data
+# in the Railway UI and apply deploy/railway.env.example (TOKENS_ENFORCE=true,
+# NEXA_STORAGE_MODE=persistent). This file does not create paid volumes.
+
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"

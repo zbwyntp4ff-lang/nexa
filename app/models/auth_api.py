@@ -68,6 +68,8 @@ class RegisterResponse(BaseModel):
     resend_available_at: str
     ready: bool = False
     message: str = "Account created. Verify your email to activate it."
+    # Returned for desktop/Electron where cookie may not stick across localhost vs 127.0.0.1.
+    session_token: str | None = None
 
 
 class AuthStatusResponse(BaseModel):
@@ -95,6 +97,8 @@ class LoginResponse(BaseModel):
     user: UserPublic
     expires_at: str
     message: str = "Signed in."
+    # Returned for desktop/Electron where cookie may not stick across localhost vs 127.0.0.1.
+    session_token: str | None = None
 
 
 class MeResponse(BaseModel):
@@ -106,3 +110,56 @@ class MessageResponse(BaseModel):
     email: str | None = None
     code_expires_at: str | None = None
     resend_available_at: str | None = None
+
+
+class ProviderInfo(BaseModel):
+    id: str
+    label: str
+    enabled: bool
+    kind: str
+
+
+class ProvidersResponse(BaseModel):
+    oauth: list[ProviderInfo]
+    device: ProviderInfo
+    passkey: ProviderInfo
+    password: ProviderInfo
+
+
+class OAuthStartResponse(BaseModel):
+    authorize_url: str
+    state: str
+    provider: str
+
+
+class DeviceStartResponse(BaseModel):
+    device_code: str
+    user_code: str
+    verification_uri: str
+    verification_uri_complete: str
+    expires_in: int
+    interval: int
+    qr_payload: str
+    qr_svg: str = ""
+    phone_url: str = ""
+
+
+class DeviceApproveRequest(BaseModel):
+    user_code: str = Field(..., min_length=3, max_length=32)
+
+
+class DeviceDenyRequest(BaseModel):
+    user_code: str = Field(..., min_length=3, max_length=32)
+
+
+class PasskeyVerifyRequest(BaseModel):
+    credential_id: str = Field(..., min_length=8, max_length=512)
+    client_data_json: str = Field(..., min_length=8)
+    public_key: str = ""
+    label: str = "Passkey"
+
+
+class DeleteAccountRequest(BaseModel):
+    """Server-side confirmation for irreversible account wipe."""
+
+    confirm: str = Field(..., min_length=1, max_length=32)

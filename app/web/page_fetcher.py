@@ -19,6 +19,16 @@ from app.web.content_extractor import ContentExtractor
 from app.web.models import PageDocument
 from app.web.security import Resolver, validate_url
 _REDIRECT_STATUS_CODES = frozenset({301, 302, 303, 307, 308})
+_DEFAULT_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (compatible; NEXAResearch/1.0; +https://localhost) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.8,ru;q=0.7",
+}
+
+
 class PageFetcher:
     def __init__(
         self,
@@ -45,7 +55,11 @@ class PageFetcher:
             app.models.errors.WebFetchError
         """
         current_url = self._validate(url)
-        client_kwargs = {"timeout": self._timeout_seconds, "follow_redirects": False}
+        client_kwargs = {
+            "timeout": self._timeout_seconds,
+            "follow_redirects": False,
+            "headers": dict(_DEFAULT_HEADERS),
+        }
         if self._transport is not None:
             client_kwargs["transport"] = self._transport
         try:
@@ -89,11 +103,25 @@ class PageFetcher:
             if status_code >= 400:
                 raise WebFetchError(f"'{url}' returned HTTP {status_code}.")
             chunks = bytearray()
-            async for chunk in response.aiter_bytes():
-                chunks.extend(chunk)
-                if len(chunks) > self._max_page_size_bytes:
-                    raise PageTooLargeError(
-                        f"Page at '{url}' exceeds the maximum size of "
-                        f"{self._max_page_size_bytes} bytes."
-                    )
+            truncated = False
+            try:
+                async for chunk in response.aiter_bytes():
+                    remaining = self._max_page_size_bytes - len(chunks)
+                    if remaining <= 0:
+                        truncated = True
+                        break
+                    if len(chunk) > remaining:
+                        chunks.extend(chunk[:remaining])
+                        truncated = True
+                        break
+                    chunks.extend(chunk)
+            finally:
+                if truncated:
+                    await response.aclose()
+            if truncated and not chunks:
+                raise PageTooLargeError(
+                    f"Page at '{url}' exceeds the maximum size of "
+                    f"{self._max_page_size_bytes} bytes."
+                )
+            # Prefer partial extract over hard fail when HTML is huge but usable.
             return bytes(chunks), (status_code, location)

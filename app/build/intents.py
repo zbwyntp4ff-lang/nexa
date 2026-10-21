@@ -6,9 +6,10 @@ import re
 _BUILD_NEW = re.compile(
     r"(создай|сделай|собери|напиши)\s+(мне\s+)?"
     r"(?:\S+\s+){0,4}"
-    r"(игру|игрушку|сайт|приложен\w*|инструмент|прототип|программ\w*|проект|api|бот)|"
-    r"create\s+(an?\s+|me\s+a\s+)?(?:\S+\s+){0,4}(app|game|website|site|tool|prototype|program|project)|"
-    r"build\s+(an?\s+|me\s+a\s+)?(?:\S+\s+){0,4}(app|game|website|site|tool|project)|"
+    r"(игру|игрушку|гонку|гоночн\w*|сайт|приложен\w*|инструмент|прототип|программ\w*|проект|api|бот|"
+    r"3\s*d|three\.?js|танк\w*|пол[её]т\w*|приключен\w*)|"
+    r"create\s+(an?\s+|me\s+a\s+)?(?:\S+\s+){0,4}(app|game|website|site|tool|prototype|program|project|racing|racer|flight|tank|adventure)|"
+    r"build\s+(an?\s+|me\s+a\s+)?(?:\S+\s+){0,4}(app|game|website|site|tool|project|racing|racer|flight|tank)|"
     r"(сделай|создай)\s+мне\b|"
     r"и\s+запусти|"
     r"working\s+project|полный\s+проект",
@@ -20,7 +21,7 @@ _BUILD_FOLLOWUP = re.compile(
     r"сделай(?:\s+\S+){0,4}\s+(красивее|быстрее|больше)|"
     r"add\s+|change\s+|fix\s+|improve\s+|make\s+(it\s+)?|"
     r"поменяй|увеличь|уменьши|перепиши)|"
-    r"(game\s*over|систем\w*\s+очк|очк\w*|score)",
+    r"(game\s*over|систем\w*\s+очк|очк\w*|score|rival|соперник|карт\w*|bigger\s*map)",
     re.IGNORECASE,
 )
 

@@ -1,11 +1,15 @@
 "use client";
+
 import * as React from "react";
 import { ChatPanel } from "@/components/chat/chat-panel";
 import { HexaVoicePanel } from "@/components/hexa/hexa-voice-panel";
 import { Header } from "@/components/layout/header";
+import { PlanPromoDialog } from "@/components/layout/plan-promo-dialog";
 import { RightDock } from "@/components/layout/right-dock";
 import { DesktopSidebar } from "@/components/layout/sidebar/sidebar";
 import { MobileSidebar } from "@/components/layout/sidebar/mobile-sidebar";
+import { StorageModeBanner } from "@/components/layout/storage-mode-banner";
+import { GameCreatorPanel } from "@/components/game-creator/game-creator-panel";
 import { OmniversePanel } from "@/components/omniverse/omniverse-panel";
 import { SettingsDialog } from "@/components/settings/settings-dialog";
 import { ProjectPanel } from "@/components/projects/project-panel";
@@ -19,6 +23,7 @@ export function AppShell() {
   const openSettings = useUiStore((s) => s.openSettings);
   const isOmni = activeView === "omniverse";
   const isHexa = activeView === "hexa";
+  const isChat = activeView === "chat";
 
   React.useEffect(() => {
     if (typeof window === "undefined") return;
@@ -27,29 +32,29 @@ export function AppShell() {
       openSettings("billing");
     }
   }, [openSettings]);
-  if (isHexa) {
-    return (
-      <div className="flex h-dvh w-full overflow-hidden">
-        <HexaVoicePanel />
-        <SettingsDialog />
-      </div>
-    );
-  }
+
   return (
     <div className="nexa-chat-atmosphere flex h-dvh w-full overflow-hidden text-foreground">
-      {!isOmni && (
-        <>
-          <DesktopSidebar />
-          <MobileSidebar />
-        </>
-      )}
+      <DesktopSidebar />
+      <MobileSidebar />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Header />
-        <main className="min-h-0 flex-1">{isOmni ? <OmniversePanel /> : <ChatPanel />}</main>
+        <StorageModeBanner />
+        {!isHexa && <Header />}
+        <main className="min-h-0 flex-1">
+          {isHexa ? (
+            <HexaVoicePanel />
+          ) : isOmni ? (
+            <OmniversePanel />
+          ) : (
+            <ChatPanel />
+          )}
+        </main>
       </div>
-      {!isOmni && <RightDock />}
+      {isChat && <RightDock />}
       <SettingsDialog />
+      <PlanPromoDialog />
       <ProjectPanel />
+      <GameCreatorPanel />
       <WorkflowPanel />
     </div>
   );

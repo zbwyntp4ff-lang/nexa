@@ -28,7 +28,12 @@ def client():
 def test_health_endpoint(client: TestClient):
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    body = response.json()
+    assert body["status"] in ("ok", "degraded")
+    assert body["version"]
+    assert body["storage_mode"] in ("persistent", "ephemeral")
+    assert "database_ok" in body
+    assert body.get("ollama_required") is False
 def test_status_endpoint(client: TestClient):
     response = client.get("/api/v1/status")
     assert response.status_code == 200

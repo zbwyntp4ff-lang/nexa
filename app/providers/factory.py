@@ -39,6 +39,21 @@ class ProviderFactory:
                 model=settings.anthropic_model,
                 timeout_seconds=settings.request_timeout_seconds,
             )
+        if provider_name == "gemini":
+            from app.providers.gemini_provider import GeminiProvider
+            return GeminiProvider(
+                api_key=settings.resolved_gemini_api_key,
+                model=settings.gemini_model,
+                timeout_seconds=settings.request_timeout_seconds,
+            )
+        if provider_name == "openrouter":
+            from app.providers.openrouter_provider import OpenRouterProvider
+            return OpenRouterProvider(
+                api_key=settings.openrouter_api_key,
+                model=settings.openrouter_model,
+                timeout_seconds=settings.request_timeout_seconds,
+                base_url=settings.openrouter_base_url,
+            )
         if provider_name == "local":
             from app.providers.local_provider import LocalProvider
             return LocalProvider(

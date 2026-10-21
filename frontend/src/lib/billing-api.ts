@@ -45,6 +45,13 @@ export interface BillingOverview {
     plan: string;
   };
   provider_configured: boolean;
+  provider_status?: {
+    provider: string;
+    configured: boolean;
+    mode: string;
+    currency: string;
+    activation: string;
+  };
   payment_methods: Array<{
     id: string;
     brand: string | null;

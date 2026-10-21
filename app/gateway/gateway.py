@@ -69,7 +69,7 @@ def _save_persisted_selection(selection: Selection) -> None:
     except OSError:
         logger.warning("Could not persist model selection to disk.")
 def build_provider_registry(settings: Settings) -> ProviderRegistry:
-    """Register the real OpenAI, Anthropic, Ollama, and mock providers."""
+    """Register OpenAI, Anthropic, Gemini, OpenRouter, Ollama, and mock providers."""
     registry = ProviderRegistry()
     timeout = settings.request_timeout_seconds
     def openai_factory(model_id: str) -> AIProvider:
@@ -85,6 +85,21 @@ def build_provider_registry(settings: Settings) -> ProviderRegistry:
             api_key=settings.anthropic_api_key,
             model=model_id,
             timeout_seconds=timeout,
+        )
+    def gemini_factory(model_id: str) -> AIProvider:
+        from app.providers.gemini_provider import GeminiProvider
+        return GeminiProvider(
+            api_key=settings.resolved_gemini_api_key,
+            model=model_id,
+            timeout_seconds=timeout,
+        )
+    def openrouter_factory(model_id: str) -> AIProvider:
+        from app.providers.openrouter_provider import OpenRouterProvider
+        return OpenRouterProvider(
+            api_key=settings.openrouter_api_key,
+            model=model_id,
+            timeout_seconds=timeout,
+            base_url=settings.openrouter_base_url,
         )
     def ollama_factory(model_id: str) -> AIProvider:
         from app.providers.ollama_provider import OllamaProvider
@@ -105,6 +120,8 @@ def build_provider_registry(settings: Settings) -> ProviderRegistry:
         return MockProvider(model_name=model_id or "nexa-mock-1")
     registry.register("openai", openai_factory)
     registry.register("anthropic", anthropic_factory)
+    registry.register("gemini", gemini_factory)
+    registry.register("openrouter", openrouter_factory)
     registry.register("ollama", ollama_factory)
     registry.register("local", local_factory)
     registry.register("mock", mock_factory)
@@ -119,6 +136,8 @@ def initial_selection(settings: Settings) -> Selection:
     model_id = {
         "openai": settings.openai_model,
         "anthropic": settings.anthropic_model,
+        "gemini": settings.gemini_model,
+        "openrouter": settings.openrouter_model,
         "ollama": settings.local_model_name,
         "mock": "nexa-mock-1",
     }.get(provider, settings.local_model_name)
@@ -153,6 +172,14 @@ class ModelGateway:
     @property
     def last_result(self) -> GatewayResult | None:
         return self._last
+
+    def _raise_if_kill_switch(self) -> None:
+        if bool(getattr(self._settings, "ai_kill_switch", False)):
+            raise GatewayError(
+                MODEL_UNAVAILABLE,
+                "AI is temporarily disabled by the operator. Please try again later.",
+            )
+
     def set_selection(self, provider: str, model: str, allow_fallback: bool) -> Selection:
         provider_name = provider.strip().lower()
         model_id = model.strip()
@@ -195,10 +222,18 @@ class ModelGateway:
             return
         self._models.set_ollama(names, reachable=True)
         logger.info("gateway ollama models=%d", len(names))
-    def _cards(self, *, include_mock: bool = True) -> list[ModelCard]:
+    def _allow_mock_cards(self) -> bool:
+        """Mock is only for explicit AI_PROVIDER=mock / tests — never a silent fallback."""
+        return (self._settings.ai_provider or "").strip().lower() == "mock"
+
+    def _cards(self, *, include_mock: bool | None = None) -> list[ModelCard]:
+        if include_mock is None:
+            include_mock = self._allow_mock_cards()
         return self._models.cards(
             openai_configured=bool(self._settings.openai_api_key),
             anthropic_configured=bool(self._settings.anthropic_api_key),
+            gemini_configured=bool(self._settings.resolved_gemini_api_key),
+            openrouter_configured=bool(self._settings.openrouter_api_key),
             include_mock=include_mock,
         )
     async def list_models(self, *, include_mock: bool = False) -> list[ModelCard]:
@@ -208,13 +243,15 @@ class ModelGateway:
         configured = {
             "openai": bool(self._settings.openai_api_key),
             "anthropic": bool(self._settings.anthropic_api_key),
+            "gemini": bool(self._settings.resolved_gemini_api_key),
+            "openrouter": bool(self._settings.openrouter_api_key),
             "ollama": self._models._ollama_reachable is not False,
             "local": self._models._ollama_reachable is not False,
-            "mock": True,
+            "mock": self._allow_mock_cards(),
         }.get(provider, False)
         reason = None
         availability = "available" if configured else "unavailable"
-        if provider in ("openai", "anthropic") and not configured:
+        if provider in ("openai", "anthropic", "gemini", "openrouter") and not configured:
             reason = "missing_api_key"
         if provider in ("ollama", "local") and self._models._ollama_reachable is False:
             reason = "provider_unavailable"
@@ -314,7 +351,7 @@ class ModelGateway:
         return "No model is available for this task. " + "; ".join(reasons) + "."
     def _open(self, card: ModelCard) -> AIProvider:
         if card.availability_reason == "missing_api_key" or (
-            card.provider in ("openai", "anthropic")
+            card.provider in ("openai", "anthropic", "gemini", "openrouter")
             and card.availability != "available"
             and not _key_for(self._settings, card.provider)
         ):
@@ -420,15 +457,19 @@ class ModelGateway:
             if isinstance(task_kind, TaskKind)
             else parse_task_kind(task_kind if isinstance(task_kind, str) else None, text)
         )
-        cards = self._cards(include_mock=True)
+        cards = self._cards()
         attempts = self._attempts(cards, model=model, kind=kind, allow_fallback=allow_fallback)
         if not attempts:
             raise GatewayError(MODEL_UNAVAILABLE, self._unavailable_message(cards))
+        manual = self._is_manual_request(model)
         if images:
-            attempts = self._require_vision(attempts, cards, manual=self._is_manual_request(model))
+            attempts = self._require_vision(attempts, cards, manual=manual)
         else:
-            attempts = self._require_chat(attempts, cards, manual=self._is_manual_request(model))
-            attempts = _prefer_fast_local(attempts, kind=kind, text=text, cards=cards)
+            attempts = self._require_chat(attempts, cards, manual=manual)
+            # Never silently replace a manual cloud/local pick with another model.
+            attempts = _prefer_fast_local(
+                attempts, kind=kind, text=text, cards=cards, manual=manual
+            )
         prepared = _attach_images(messages, images) if images else messages
         return kind, attempts, prepared
 
@@ -441,6 +482,7 @@ class ModelGateway:
         allow_fallback: bool | None = None,
         images: list[tuple[bytes, str]] | None = None,
     ) -> GatewayResult:
+        self._raise_if_kill_switch()
         # Availability refresh is cached; never block chat on a cold tags fetch
         # when we already have a warm catalog.
         if self._models._ollama_reachable is None:
@@ -458,8 +500,20 @@ class ModelGateway:
             len(images) if images else 0,
             attempts[0].model_id if attempts else None,
         )
-        return await self._run_chat(prepared, attempts)
-    async def _run_chat(self, messages: list[ChatMessage], attempts: list[ModelCard]) -> GatewayResult:
+        return await self._run_chat(
+            prepared,
+            attempts,
+            task_kind=kind,
+            selection_mode=self._selection.mode,
+        )
+    async def _run_chat(
+        self,
+        messages: list[ChatMessage],
+        attempts: list[ModelCard],
+        *,
+        task_kind: TaskKind | None = None,
+        selection_mode: str | None = None,
+    ) -> GatewayResult:
         last_error: GatewayError | None = None
         failed_from: str | None = None
         for index, card in enumerate(attempts):
@@ -505,13 +559,17 @@ class ModelGateway:
                 display_name=card.display_name,
                 fallback_used=index > 0,
                 fallback_from=failed_from if index > 0 else None,
+                task_kind=task_kind.value if task_kind else None,
+                selection_mode=selection_mode,
             )
             self._last = result
             logger.info(
-                "gateway chat completed provider=%s model=%s fallback=%s",
+                "gateway chat completed provider=%s model=%s fallback=%s task=%s mode=%s",
                 result.provider,
                 result.model_id,
                 result.fallback_used,
+                result.task_kind,
+                result.selection_mode,
             )
             return result
         if last_error is not None:
@@ -534,6 +592,7 @@ class ModelGateway:
         allow_fallback: bool | None = None,
         images: list[tuple[bytes, str]] | None = None,
     ) -> AsyncIterator[StreamEvent]:
+        self._raise_if_kill_switch()
         if self._models._ollama_reachable is None:
             await self.refresh_ollama()
         else:
@@ -585,6 +644,8 @@ class ModelGateway:
                 display_name=card.display_name,
                 fallback_used=index > 0,
                 fallback_from=failed_from if index > 0 else None,
+                task_kind=kind.value,
+                selection_mode=self._selection.mode,
             )
             self._last = result
             yield StreamEvent(
@@ -594,6 +655,8 @@ class ModelGateway:
                 display_name=result.display_name,
                 fallback_used=result.fallback_used,
                 fallback_from=result.fallback_from,
+                task_kind=result.task_kind,
+                selection_mode=result.selection_mode,
             )
             return
         if last_error is not None:
@@ -601,7 +664,7 @@ class ModelGateway:
         raise GatewayError(MODEL_UNAVAILABLE, "No streaming model is available.")
     async def check(self, model_id: str, *, live: bool = False) -> ModelCard:
         await self.refresh_ollama(force=True)
-        cards = self._cards(include_mock=True)
+        cards = self._cards()
         card = find_card(cards, model_id, None)
         if card is None:
             if not is_safe_model_id(model_id) or contains_secret(model_id):
@@ -632,7 +695,7 @@ class ModelGateway:
             )
         return card
     def active_card(self) -> ModelCard:
-        cards = self._cards(include_mock=True)
+        cards = self._cards()
         if self._selection.mode == "manual" and self._selection.provider and self._selection.model_id:
             return self._card(self._selection.provider, self._selection.model_id, cards)
         kind = TaskKind.LOCAL if self._settings.ai_provider in ("local", "ollama") else TaskKind.SIMPLE
@@ -708,12 +771,16 @@ def _prefer_fast_local(
     kind: TaskKind,
     text: str,
     cards: list[ModelCard],
+    manual: bool = False,
 ) -> list[ModelCard]:
     """For simple/short chat, put the smallest suitable local chat model first.
 
     Does not invent answers — only reorders real available models. Skips
     vision-only cards. Keeps non-local models after local fast candidates.
+    Manual selections are never reordered (cloud keys / user pick stay honest).
     """
+    if manual:
+        return attempts
     if kind not in (TaskKind.SIMPLE, TaskKind.LOCAL):
         return attempts
     stripped = text.strip()
@@ -754,6 +821,10 @@ def _key_for(settings: Settings, provider: str) -> bool:
         return bool(settings.openai_api_key)
     if provider == "anthropic":
         return bool(settings.anthropic_api_key)
+    if provider == "gemini":
+        return bool(settings.resolved_gemini_api_key)
+    if provider == "openrouter":
+        return bool(settings.openrouter_api_key)
     return True
 def _same(left: ModelCard, right: ModelCard) -> bool:
     return left.provider == right.provider and left.model_id == right.model_id

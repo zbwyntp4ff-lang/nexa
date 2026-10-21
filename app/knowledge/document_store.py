@@ -36,20 +36,31 @@ class DocumentStore:
     def get(self, document_id: str) -> KnowledgeDocument | None:
         with self._lock:
             return self._documents.get(document_id)
-    def find_by_hash(self, doc_hash: str, project_id: str | None, conversation_id: str | None) -> KnowledgeDocument | None:
+    def find_by_hash(
+        self,
+        doc_hash: str,
+        project_id: str | None,
+        conversation_id: str | None,
+        user_id: str | None = None,
+    ) -> KnowledgeDocument | None:
         with self._lock:
             for doc in self._documents.values():
                 if (
                     doc.doc_hash == doc_hash
                     and doc.project_id == project_id
                     and doc.conversation_id == conversation_id
+                    and doc.user_id == user_id
                     and doc.status != "error"
                 ):
                     return doc
         return None
-    def list(self, project_id: str | None = None) -> list[KnowledgeDocument]:
+    def list(
+        self, project_id: str | None = None, user_id: str | None = None
+    ) -> list[KnowledgeDocument]:
         with self._lock:
             docs = list(self._documents.values())
+        if user_id is not None:
+            docs = [d for d in docs if d.user_id == user_id]
         if project_id is not None:
             docs = [d for d in docs if d.project_id == project_id]
         return sorted(docs, key=lambda d: d.created_at, reverse=True)
@@ -59,6 +70,15 @@ class DocumentStore:
             if existed:
                 self._flush()
             return existed
+    def delete_user(self, user_id: str) -> list[str]:
+        """Remove all documents for ``user_id``. Returns deleted document ids."""
+        with self._lock:
+            to_remove = [d.id for d in self._documents.values() if d.user_id == user_id]
+            for doc_id in to_remove:
+                del self._documents[doc_id]
+            if to_remove:
+                self._flush()
+            return to_remove
 class InMemoryDocumentStore(DocumentStore):
     def __init__(self) -> None:
         self._lock = threading.Lock()

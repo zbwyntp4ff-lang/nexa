@@ -9,18 +9,28 @@ from app.models.chat import ChatMessage
 from app.models.errors import ModelError, ProviderConfigurationError, ProviderTimeoutError
 from app.providers.base import AIProvider
 class OpenAIProvider(AIProvider):
-    """Provider that delegates chat completion to the OpenAI API."""
+    """Provider that delegates chat completion to the OpenAI API.
+
+    Optional ``base_url`` supports OpenAI-compatible gateways (e.g. OpenRouter)
+    without a separate client stack.
+    """
     name = "openai"
     def __init__(
         self,
         api_key: str | None,
         model: str = "gpt-4o-mini",
         timeout_seconds: float = 30.0,
+        *,
+        base_url: str | None = None,
+        provider_name: str | None = None,
+        missing_key_message: str | None = None,
     ) -> None:
         if not api_key:
             raise ProviderConfigurationError(
-                "OPENAI_API_KEY is not set. Configure it in your .env file."
+                missing_key_message
+                or "OPENAI_API_KEY is not set. Configure it in your .env file."
             )
+        self.name = provider_name or "openai"
         self._model = model
         self._timeout_seconds = timeout_seconds
         try:
@@ -29,7 +39,10 @@ class OpenAIProvider(AIProvider):
             raise ProviderConfigurationError(
                 "The 'openai' package is required to use AI_PROVIDER=openai."
             ) from exc
-        self._client = AsyncOpenAI(api_key=api_key, timeout=timeout_seconds)
+        kwargs: dict = {"api_key": api_key, "timeout": timeout_seconds}
+        if base_url:
+            kwargs["base_url"] = base_url.rstrip("/")
+        self._client = AsyncOpenAI(**kwargs)
     @property
     def model_name(self) -> str:
         return self._model
@@ -61,11 +74,11 @@ class OpenAIProvider(AIProvider):
         except TimeoutError as exc:
             raise ProviderTimeoutError() from exc
         except Exception as exc:  # noqa: BLE001 - normalize all SDK errors
-            raise ModelError(f"OpenAI request failed: {exc}") from exc
+            raise ModelError(f"{self.name} request failed: {exc}") from exc
         choice = response.choices[0] if response.choices else None
         content = choice.message.content if choice and choice.message else None
         if not content:
-            raise ModelError("OpenAI returned an empty response.")
+            raise ModelError(f"{self.name} returned an empty response.")
         return content
     async def stream(self, messages: list[ChatMessage]) -> AsyncIterator[str]:
         try:
@@ -79,7 +92,7 @@ class OpenAIProvider(AIProvider):
                 if delta and delta.content:
                     yield delta.content
         except Exception as exc:  # noqa: BLE001
-            raise ModelError(f"OpenAI streaming request failed: {exc}") from exc
+            raise ModelError(f"{self.name} streaming request failed: {exc}") from exc
     async def health_check(self) -> bool:
         try:
             await asyncio.wait_for(self._client.models.list(), timeout=5)

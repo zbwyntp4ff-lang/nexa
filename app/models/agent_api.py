@@ -35,3 +35,7 @@ class AgentRunResponse(BaseModel):
     provider: str | None = None
     model: str | None = None
     display_name: str | None = None
+    project_status: str | None = None
+    project_id: str | None = None
+    project_manifest: dict | None = None
+    partial_success: bool = False

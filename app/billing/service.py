@@ -195,12 +195,36 @@ class BillingService:
             raise PlanNotPurchasableError("Payment method not found for this account.")
         self._provider.detach_payment_method(payment_method_id)
 
+    def provider_status(self) -> dict[str, str | bool]:
+        """Honest payment-provider readiness (never claim live payments without keys)."""
+        key = (self._settings.stripe_secret_key or "").strip()
+        wh = (self._settings.stripe_webhook_secret or "").strip()
+        configured = bool(key and wh)
+        if not configured:
+            mode = "unconfigured"
+        elif key.startswith("sk_test_"):
+            mode = "test"
+        elif key.startswith("sk_live_"):
+            mode = "live"
+        else:
+            mode = "unknown"
+        return {
+            "provider": "stripe",
+            "configured": configured,
+            "mode": mode,
+            # Plans are RUB; Stripe availability depends on the legal operator's country.
+            "currency": "rub",
+            "activation": "webhook_only",
+        }
+
     def billing_overview(self, user: UserRecord) -> dict:
         snap = self._entitlements.snapshot(user.id)
         sub = self._store.get_subscription_for_user(user.id)
+        status = self.provider_status()
         return {
             **snap,
-            "provider_configured": self._provider.configured,
+            "provider_configured": bool(status["configured"]),
+            "provider_status": status,
             "subscription_id": sub.id if sub else None,
             "provider_subscription_id": sub.provider_subscription_id if sub else None,
             "payment_methods": self.list_payment_methods(user),

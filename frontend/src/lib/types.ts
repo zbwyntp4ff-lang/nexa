@@ -88,6 +88,17 @@ export interface ChatMessageView {
   agentSteps?: AgentStepView[];
   /** Provider and model that actually produced this answer, when the backend reports one. */
   modelLabel?: string;
+  /** Transparent routing metadata from the Model Gateway (never invents cost). */
+  routing?: {
+    provider?: string;
+    model?: string;
+    taskKind?: string;
+    selectionMode?: string;
+    fallbackUsed?: boolean;
+    fallbackFrom?: string;
+    promptTokens?: number;
+    completionTokens?: number;
+  };
   /** Present only for assistant messages produced by Research mode: numbered web sources. */
   citations?: CitationView[];
   /** Present only for assistant messages produced by Create mode: generated image results. */
@@ -113,12 +124,20 @@ export interface Conversation {
   createdAt: string;
   updatedAt: string;
 }
+export interface ProjectPersonalization {
+  preferredModel?: string | null;
+  responseStyle?: "concise" | "balanced" | "detailed" | "technical" | null;
+  aiLanguage?: string | null;
+  usePersonalContext?: boolean | null;
+}
 export interface Project {
   id: string;
   name: string;
   instructions: string;
   fileNames: string[];
   createdAt: string;
+  /** Part 11 — project overrides (do not mutate global profile). */
+  personalization?: ProjectPersonalization;
 }
 export type AppStatus = "online" | "offline" | "thinking" | "using_tool" | "researching" | "generating" | "error";
 export interface BackendStatus {

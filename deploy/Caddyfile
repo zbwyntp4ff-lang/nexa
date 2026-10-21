@@ -1,3 +1,5 @@
+# Stock Caddy reverse proxy (HTTPS is usually terminated by Render/Railway/CF).
+# No built-in distributed rate_limit in this image — see docs/EDGE_RATE_LIMITING.md.
 :{$PORT:8080} {
 	encode gzip
 

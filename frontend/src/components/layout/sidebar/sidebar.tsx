@@ -14,11 +14,11 @@ export function DesktopSidebar() {
       aria-label="Sidebar"
       aria-hidden={collapsed}
       className={cn(
-        "hidden shrink-0 overflow-hidden border-sidebar-border transition-[width,border-width] duration-200 lg:block",
+        "hidden h-full min-h-0 shrink-0 overflow-hidden border-sidebar-border transition-[width,border-width] duration-200 lg:block",
         collapsed ? "w-0 border-r-0" : "w-72 border-r border-sidebar-border/60"
       )}
     >
-      <div className="h-full w-72">
+      <div className="h-full min-h-0 w-72">
         <SidebarContent />
       </div>
     </aside>

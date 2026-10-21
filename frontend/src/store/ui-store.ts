@@ -9,10 +9,13 @@ export type SettingsSection =
   | "models"
   | "memory"
   | "knowledge"
+  | "learning"
   | "privacy"
   | "tools"
   | "plugins"
   | "billing"
+  | "tokens"
+  | "personalization"
   | "about";
 interface UiStoreState {
   activeView: AppView;
@@ -39,6 +42,9 @@ interface UiStoreState {
   /** Mode selected before a conversation exists yet (applied when one is created). */
   pendingMode: AppMode;
   setPendingMode: (mode: AppMode) => void;
+  /** Bumped when switching modes so the chat panel can animate a fresh tab. */
+  panelMotionKey: number;
+  bumpPanelMotion: () => void;
 }
 export const useUiStore = create<UiStoreState>()(
   persist(
@@ -67,6 +73,8 @@ export const useUiStore = create<UiStoreState>()(
       setActiveTool: (tool) => set({ activeTool: tool }),
       pendingMode: "chat",
       setPendingMode: (mode) => set({ pendingMode: mode }),
+      panelMotionKey: 0,
+      bumpPanelMotion: () => set((state) => ({ panelMotionKey: state.panelMotionKey + 1 })),
     }),
     {
       name: "nexa-ui-store",

@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "./api";
+import { authHeaders, getSessionToken } from "./session-token";
 import type { AttachmentKind, AttachmentUploadOutcome, AttachmentView } from "./types";
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp", "gif"]);
 const DOCUMENT_EXTENSIONS = new Set(["txt", "md", "csv", "json", "pdf", "docx", "xlsx"]);
@@ -107,6 +108,9 @@ export function uploadAttachment(file: File, onProgress?: (percent: number) => v
       resolve({ id: "", kind: fallbackKind, status: "failed", error: "Could not reach the NEXA backend." });
     };
     xhr.open("POST", `${API_BASE_URL}/api/v1/attachments`);
+    xhr.withCredentials = true;
+    const token = getSessionToken();
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
     xhr.send(formData);
   });
 }
@@ -119,7 +123,11 @@ export function safeRevokeObjectUrl(url: string | undefined): void {
   }
 }
 export function deleteAttachmentBestEffort(serverId: string): void {
-  fetch(`${API_BASE_URL}/api/v1/attachments/${serverId}`, { method: "DELETE" }).catch(() => {
+  fetch(`${API_BASE_URL}/api/v1/attachments/${serverId}`, {
+    method: "DELETE",
+    credentials: "include",
+    headers: authHeaders(),
+  }).catch(() => {
     // best-effort - the server also expires attachments on its own via TTL
   });
 }

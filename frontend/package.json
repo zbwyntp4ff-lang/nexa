@@ -1,6 +1,6 @@
 {
   "name": "frontend",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "main": "electron/main.js",
   "scripts": {
@@ -12,7 +12,7 @@
     "test:watch": "vitest",
     "e2e": "playwright test",
     "electron": "electron .",
-    "electron:build": "NEXA_TARGET=electron next build",
+    "electron:build": "node scripts/electron-build.js",
     "dist:electron:icons": "node build/generate-icons.js",
     "dist:electron:linux": "npm run dist:electron:icons && npm run electron:build && electron-builder --linux AppImage",
     "dist:electron:win": "npm run dist:electron:icons && npm run electron:build && electron-builder --win nsis portable"
@@ -62,7 +62,7 @@
     "appId": "ai.nexa.desktop",
     "productName": "NEXA",
     "executableName": "NEXA",
-    "copyright": "NEXA AI",
+    "copyright": "All rights reserved",
     "directories": {
       "output": "dist-electron",
       "buildResources": "build"

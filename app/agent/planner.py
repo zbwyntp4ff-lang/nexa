@@ -37,6 +37,37 @@ _TIME_PATTERN: Final = re.compile(
 _WEB_RESEARCH_PATTERN: Final = re.compile(
     r"найди в интернете|поищи в интернете|поищи в сети|search the web|search online", re.IGNORECASE
 )
+_PRESENTATION_PATTERN: Final = re.compile(
+    r"презентац|powerpoint|\.pptx\b|\bppt\b|слайд|presentation|slides?\b",
+    re.IGNORECASE,
+)
+_DOCX_PATTERN: Final = re.compile(
+    r"\bdocx\b|\.docx\b|word[\s\-]?(doc|документ)|документ\s+word|"
+    r"(создай|сделай|напиши|generate|create).{0,40}(отч[её]т|report)\b",
+    re.IGNORECASE,
+)
+_XLSX_PATTERN: Final = re.compile(
+    r"\bxlsx\b|\.xlsx\b|excel|таблиц|spreadsheet|workbook",
+    re.IGNORECASE,
+)
+_PDF_PATTERN: Final = re.compile(
+    r"\bpdf\b|\.pdf\b|(создай|сделай|generate|create).{0,30}pdf",
+    re.IGNORECASE,
+)
+_ANALYZE_FILE_PATTERN: Final = re.compile(
+    r"проанализируй\s+файл|разбери\s+(файл|документ)|analyze\s+file|inspect\s+document",
+    re.IGNORECASE,
+)
+_BROWSER_PATTERN: Final = re.compile(
+    r"открой\s+(сайт|страниц|url)|open\s+(the\s+)?(page|site|url)|browser\s+(open|goto)|"
+    r"playwright|зайди\s+на\s+сайт",
+    re.IGNORECASE,
+)
+_OPEN_RESULT_PATTERN: Final = re.compile(
+    r"открой\s+(презентац|файл|результат|в\s+powerpoint|в\s+word)|"
+    r"open\s+(the\s+)?(presentation|result|file|in\s+powerpoint)",
+    re.IGNORECASE,
+)
 _BUILD_PROJECT_PATTERN: Final = re.compile(
     r"(создай|сделай|собери)\s+(мне\s+)?(?:\S+\s+){0,4}(игру|сайт|приложен|инструмент|прототип)|"
     r"create\s+(an?\s+)?(?:\S+\s+){0,4}(app|game|website|site|tool)|"
@@ -132,6 +163,69 @@ class RuleBasedPlanner:
                 rationale="Rename pattern matched but could not unambiguously extract both paths.",
             )
 
+        # Multi-deliverable projects (research + PPTX + XLSX + DOCX, etc.).
+        compound = self._plan_compound(state, description)
+        if compound is not None:
+            return compound
+
+        if _BROWSER_PATTERN.search(description):
+            url_match = re.search(r"https?://[^\s]+", description)
+            if not url_match:
+                return PlannedAction(
+                    type=PlannedActionType.FINAL_ANSWER,
+                    final_answer="Укажите http(s) URL страницы для browser-инструмента.",
+                    rationale="browser needs an explicit URL.",
+                )
+            return self._plan_simple_tool(
+                state,
+                tool_name="browser",
+                tool_input={"action": "extract", "url": url_match.group(0).rstrip(".,;)")},
+                final_answer_builder=lambda output: str(output),
+            )
+
+        if _OPEN_RESULT_PATTERN.search(description):
+            if not state.has_succeeded("open_result"):
+                file_id = None
+                for name in ("create_presentation", "create_document", "create_spreadsheet", "create_pdf"):
+                    out = state.last_successful_output(name)
+                    if isinstance(out, dict) and out.get("file_id"):
+                        file_id = out["file_id"]
+                        break
+                if not file_id:
+                    return PlannedAction(
+                        type=PlannedActionType.FINAL_ANSWER,
+                        final_answer=(
+                            "Сначала создайте файл (презентацию/документ), затем попросите открыть его. "
+                            "Открытие требует явного подтверждения и локальный desktop (NEXA_LOCAL_DESKTOP=1 / Electron)."
+                        ),
+                        rationale="open_result needs a prior file_id.",
+                    )
+                confirmed = bool(
+                    re.search(r"confirm|подтверд|да,?\s*открой|open\s+it\s+now", description, re.I)
+                )
+                if not confirmed:
+                    return PlannedAction(
+                        type=PlannedActionType.FINAL_ANSWER,
+                        final_answer=(
+                            f"Файл готов (file_id={file_id}). Чтобы открыть его в приложении по умолчанию, "
+                            "повторите запрос с явным подтверждением (например: «да, открой»). "
+                            "Я не утверждаю, что PowerPoint установлен, пока это не проверено."
+                        ),
+                        rationale="open_result waiting for user confirmation.",
+                    )
+                return PlannedAction(
+                    type=PlannedActionType.TOOL_CALL,
+                    tool_name="open_result",
+                    tool_input={"file_id": file_id, "confirm": True},
+                    rationale="User confirmed open_result.",
+                )
+            output = state.last_successful_output("open_result")
+            return PlannedAction(
+                type=PlannedActionType.FINAL_ANSWER,
+                final_answer=str(output),
+                rationale="open_result finished.",
+            )
+
         if _WEB_RESEARCH_PATTERN.search(description):
             if not state.has_succeeded("web_research"):
                 return PlannedAction(
@@ -146,6 +240,10 @@ class RuleBasedPlanner:
                 final_answer=str(output),
                 rationale="Web research already completed.",
             )
+
+        office = self._plan_office_document(state, description)
+        if office is not None:
+            return office
 
         # Build Engine: project creation is model-planned, but we force a workspace
         # scaffold first so follow-up synthesis can write real files (not samples).
@@ -168,6 +266,104 @@ class RuleBasedPlanner:
             final_answer=None,
             rationale="No rule-based capability matched this task; deferring to the model.",
         )
+
+    def _plan_compound(self, state: AgentState, description: str) -> PlannedAction | None:
+        """Execute multi-step compound goals without re-running finished tools."""
+        from app.agent.compound import (
+            build_compound_plan,
+            compose_final_answer,
+            next_deliverable,
+            tool_input_for,
+        )
+
+        plan = build_compound_plan(description)
+        if not plan.is_compound:
+            return None
+
+        nxt = next_deliverable(plan, state)
+        if nxt is not None:
+            return PlannedAction(
+                type=PlannedActionType.TOOL_CALL,
+                tool_name=nxt.tool_name,
+                tool_input=tool_input_for(nxt, plan, state),
+                rationale=f"Compound plan step: {nxt.kind.value} ({nxt.tool_name}).",
+            )
+        return PlannedAction(
+            type=PlannedActionType.FINAL_ANSWER,
+            final_answer=compose_final_answer(plan, state),
+            rationale="All compound deliverables attempted.",
+        )
+
+    def _plan_office_document(self, state: AgentState, description: str) -> PlannedAction | None:
+        """Route natural-language document requests to office generation tools."""
+        if _ANALYZE_FILE_PATTERN.search(description):
+            filename = extract_filename(description)
+            if not filename:
+                return PlannedAction(
+                    type=PlannedActionType.FINAL_ANSWER,
+                    final_answer="Укажите путь к файлу в рабочей области агента (например: notes.pdf).",
+                    rationale="analyze_file needs an explicit filename.",
+                )
+            return self._plan_simple_tool(
+                state,
+                tool_name="analyze_file",
+                tool_input={"path": filename},
+                final_answer_builder=_office_final_answer,
+            )
+
+        # Prefer the most specific format keyword (pptx before pdf/docx).
+        if _PRESENTATION_PATTERN.search(description):
+            title = _extract_topic_title(description) or "Presentation"
+            return self._plan_simple_tool(
+                state,
+                tool_name="create_presentation",
+                tool_input={
+                    "title": title,
+                    "outline": description,
+                    "filename": extract_filename(description) or f"{title}.pptx",
+                },
+                final_answer_builder=_office_final_answer,
+            )
+
+        if _XLSX_PATTERN.search(description) and not _PRESENTATION_PATTERN.search(description):
+            title = _extract_topic_title(description) or "Spreadsheet"
+            return self._plan_simple_tool(
+                state,
+                tool_name="create_spreadsheet",
+                tool_input={
+                    "title": title,
+                    "csv_text": _default_sheet_csv(description),
+                    "filename": extract_filename(description) or f"{title}.xlsx",
+                },
+                final_answer_builder=_office_final_answer,
+            )
+
+        if _PDF_PATTERN.search(description):
+            title = _extract_topic_title(description) or "Report"
+            return self._plan_simple_tool(
+                state,
+                tool_name="create_pdf",
+                tool_input={
+                    "title": title,
+                    "outline": description,
+                    "filename": extract_filename(description) or f"{title}.pdf",
+                },
+                final_answer_builder=_office_final_answer,
+            )
+
+        if _DOCX_PATTERN.search(description):
+            title = _extract_topic_title(description) or "Document"
+            return self._plan_simple_tool(
+                state,
+                tool_name="create_document",
+                tool_input={
+                    "title": title,
+                    "outline": description,
+                    "filename": extract_filename(description) or f"{title}.docx",
+                },
+                final_answer_builder=_office_final_answer,
+            )
+        return None
 
     def _plan_arithmetic(self, state: AgentState, description: str, expression: str) -> PlannedAction:
         if not state.has_succeeded("calculator"):
@@ -213,6 +409,56 @@ class RuleBasedPlanner:
             final_answer=final_answer_builder(output),
             rationale=f"'{tool_name}' already succeeded.",
         )
+
+
+def _office_final_answer(output) -> str:
+    """Human-readable answer with download URL — never a raw server path."""
+    if isinstance(output, dict):
+        url = output.get("download_url") or ""
+        name = output.get("filename") or "file"
+        summary = output.get("summary") or "File created."
+        slides = output.get("slides")
+        extra = f" Slides: {slides}." if isinstance(slides, int) else ""
+        if url:
+            return f"{summary}{extra} Download: {url} ({name}). File is ready — open it in the matching app on your device."
+        return f"{summary}{extra}"
+    return str(output)
+
+
+_TOPIC_PATTERNS: Final = (
+    re.compile(
+        r"(?:презентац\w*|presentation|документ|отч[её]т|report|таблиц\w*|pdf)\s+"
+        r"(?:по\s+|about\s+|on\s+|про\s+)?(.+)$",
+        re.IGNORECASE | re.DOTALL,
+    ),
+    re.compile(
+        r"(?:сделай|создай|generate|create)\s+(?:мне\s+)?(.+?)(?:\s+и\s+перенес|\s+в\s+powerpoint|\s+pptx|$)",
+        re.IGNORECASE | re.DOTALL,
+    ),
+)
+
+
+def _extract_topic_title(description: str) -> str | None:
+    text = description.strip()
+    for pattern in _TOPIC_PATTERNS:
+        match = pattern.search(text)
+        if match:
+            topic = re.sub(r"\s+", " ", match.group(1)).strip(" .,:;")
+            topic = re.sub(
+                r"\b(powerpoint|pptx|docx|xlsx|pdf|презентац\w*|слайд\w*)\b",
+                "",
+                topic,
+                flags=re.IGNORECASE,
+            ).strip(" .,:;")
+            if 2 <= len(topic) <= 80:
+                return topic[:80]
+    return None
+
+
+def _default_sheet_csv(description: str) -> str:
+    """Minimal starter table when the user did not supply rows."""
+    topic = _extract_topic_title(description) or "Item"
+    return f"Item,Value,Notes\n{topic},1,Generated by NEXA\nFollow-up,2,Edit as needed\n"
 
 
 # Backwards-compatible alias used by app/agent/agent.py's type hint.

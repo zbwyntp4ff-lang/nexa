@@ -1,0 +1,55 @@
+# LOCAL dry-run of the staging image — does NOT publish to the internet.
+# Copy to docker-compose.staging.yml (gitignored) and fill secrets via env file.
+# Requires Docker. Does not buy cloud resources.
+#
+#   cp docker-compose.staging.example.yml docker-compose.staging.yml
+#   cp .env.staging.example .env.staging.local   # fill SMTP + AI key; never commit
+#   # Point origins at http://127.0.0.1:8080 for compose-only smoke (cookies:
+#   # AUTH_COOKIE_SECURE=true still required by guards; browser login may need
+#   # a real HTTPS terminator — use curl /health and API with Bearer for smoke).
+#   docker compose -f docker-compose.staging.yml --env-file .env.staging.local up --build
+#
+# Platform staging: use deploy/render-staging.example.yaml or Railway + volume.
+
+services:
+  nexa:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      PORT: "8080"
+      NEXA_PUBLIC_BETA: "true"
+      ENVIRONMENT: production
+      NEXA_STORAGE_MODE: persistent
+      TOKENS_ENFORCE: "true"
+      AUTH_SINGLE_USER: "false"
+      AUTH_SKIP_EMAIL_VERIFICATION: "false"
+      AUTH_COOKIE_SECURE: "true"
+      AUTH_BOOTSTRAP_FIRST_OWNER: "false"
+      EMAIL_PROVIDER: smtp
+      MEMORY_BACKEND: sql
+      DATABASE_URL: sqlite:///data/nexa-staging.db
+      WORKFLOWS_ENABLED: "false"
+      ALLOW_MODEL_FALLBACK: "false"
+      NEXA_AI_KILL_SWITCH: "false"
+      AGENT_MAX_PARALLEL_PER_USER: "2"
+      # Override via --env-file (required for boot under public beta):
+      # AUTH_PUBLIC_BASE_URL, CORS_ALLOWED_ORIGINS, BILLING_PUBLIC_BASE_URL
+      # SMTP_*, EMAIL_FROM, AI_PROVIDER, OPENROUTER_* or OPENAI_*
+    env_file:
+      - .env.staging.local
+    volumes:
+      - nexa_staging_data:/app/data
+      - nexa_staging_workspace:/app/agent_workspace
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+
+volumes:
+  nexa_staging_data:
+  nexa_staging_workspace:

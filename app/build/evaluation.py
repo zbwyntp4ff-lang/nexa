@@ -33,6 +33,7 @@ _CAR_REQ = re.compile(r"машин|car|vehicle", re.I)
 _COIN_REQ = re.compile(r"монет|coin|collect|собира", re.I)
 _GAME_OVER_REQ = re.compile(r"game\s*over|гейм\s*овер", re.I)
 _SCORE_REQ = re.compile(r"очк|score", re.I)
+_THREE_REQ = re.compile(r"3\s*d|three\.?js|webgl|трёхмер|трехмер|гонк|racing|пол[её]т|flight|танк|tank|приключ|adventure", re.I)
 
 
 def evaluate_project(
@@ -181,9 +182,21 @@ def evaluate_project(
     if plan.type == "web_game" and "main.js" not in files:
         bad("build_quality", "Нет main.js для игры", "restore_main_js")
 
-    extras = [n for n in files if n not in {"index.html", "style.css", "main.js", "README.md", plan.entry_file}]
+    extras = [
+        n
+        for n in files
+        if n not in {"index.html", "style.css", "main.js", "README.md", "scene.json", plan.entry_file}
+    ]
     if len(extras) > 8:
         warn(f"Много дополнительных файлов: {len(extras)}")
+
+    is_three = (
+        "THREE" in js
+        or "WebGLRenderer" in js
+        or "three.min.js" in html
+        or "scene.json" in files
+        or bool(_THREE_REQ.search(user_request))
+    )
 
     # --- UI/UX ---
     if plan.type in {"web_game", "static_site", "frontend_app", "tool"} or html:
@@ -215,8 +228,9 @@ def evaluate_project(
     need_enemies = bool(_ENEMY_REQ.search(user_request)) or any("враг" in r.lower() for r in reqs)
     need_game_over = bool(_GAME_OVER_REQ.search(user_request))
     need_score = bool(_SCORE_REQ.search(user_request)) or any("очк" in r.lower() for r in reqs)
+    need_three = is_three or any("three" in r.lower() or "webgl" in r.lower() or "3d" in r.lower() for r in reqs)
 
-    if plan.type == "web_game" or need_car or need_coins:
+    if plan.type == "web_game" or need_car or need_coins or need_three:
         if "requestAnimationFrame" in js:
             ok("functionality", "Игровой цикл реализован")
             ok("user_intent", "Игра запускается (game loop)")
@@ -224,9 +238,31 @@ def evaluate_project(
             bad("functionality", "Игровой цикл отсутствует", "add_game_loop")
             bad("user_intent", "Игра не запускается", "add_game_loop")
 
+    if need_three:
+        if "WebGLRenderer" in js or "THREE.WebGLRenderer" in js:
+            ok("functionality", "Three.js WebGLRenderer присутствует")
+            ok("requirements", "3D рендер")
+            ok("user_intent", "Three.js соответствует запросу")
+        else:
+            bad("functionality", "Three.js WebGLRenderer отсутствует", "add_three_renderer")
+            bad("requirements", "Нет 3D рендера", "add_three_renderer")
+        if "keydown" in js or "keys" in js:
+            ok("functionality", "3D управление реализовано")
+        else:
+            bad("functionality", "3D управление отсутствует", "add_controls")
+        if "endGame" in js or "overlay" in js or "finish" in js.lower() or "won" in js:
+            ok("functionality", "Условие победы/поражения есть")
+        if "scene.json" in files:
+            ok("build_quality", "scene.json присутствует")
+
     if need_car:
         # Check implementation code — not README marketing text
-        if re.search(r"\bcar\b", js) or "машин" in js.lower():
+        if (
+            re.search(r"\bcar\b", js, re.I)
+            or "makeCar" in js
+            or "player" in js
+            or "машин" in js.lower()
+        ):
             ok("functionality", "Машина реализована")
             ok("requirements", "Машина как игрок")
             ok("user_intent", "Машина соответствует запросу")

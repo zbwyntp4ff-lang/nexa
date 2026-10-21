@@ -58,6 +58,28 @@ class ChatRequest(BaseModel):
     knowledge_top_k: int | None = Field(
         default=None, description="Override the configured top_k for this request."
     )
+    # Server-only: stamped from the authenticated user — never trust clients.
+    knowledge_user_id: str | None = Field(
+        default=None,
+        description="Server-only owner scope for Knowledge Base retrieval.",
+    )
+    request_id: str | None = Field(
+        default=None,
+        description="Client idempotency key for token charging (retries reuse the same id).",
+    )
+    apply_personalization: bool = Field(
+        default=True,
+        description="When false, skip profile personalization for this request only.",
+    )
+    project_personalization: dict | None = Field(
+        default=None,
+        description="Optional project overrides (style/model/language/instructions).",
+    )
+    # Populated by the API from the authenticated user's profile — never trust clients.
+    server_personalization_hint: str | None = Field(
+        default=None,
+        description="Server-only compact personalization hint.",
+    )
     model_config = {
         "json_schema_extra": {
             "examples": [{"message": "Привет, NEXA!"}],
@@ -79,10 +101,16 @@ class ChatResponse(BaseModel):
     display_name: str | None = None
     fallback_used: bool = False
     fallback_from: str | None = None
+    #: Auto/manual task routing label when the gateway handled the request.
+    task_kind: str | None = None
+    selection_mode: str | None = None
     attachments_used: list[str] = Field(default_factory=list)
     citations: list[ChatCitation] = Field(default_factory=list)
     knowledge_used: bool = False
     latency_ms: float
+    #: Populated only when a provider returns verified token usage (never invented).
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)
     )

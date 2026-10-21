@@ -15,21 +15,23 @@ export function AuthShell({
   className?: string;
 }) {
   return (
-    <div className="nexa-chat-atmosphere flex min-h-dvh w-full items-center justify-center px-4 py-10 text-foreground">
-      <div
-        className={cn(
-          "w-full max-w-md rounded-2xl border border-border/80 bg-background/85 p-6 shadow-xl backdrop-blur-md sm:p-8",
-          className
-        )}
-      >
-        <div className="mb-6 flex flex-col items-center gap-3 text-center">
-          <LogoWordmark />
-          <div className="space-y-1">
-            <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
-            {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
+    <div className="nexa-chat-atmosphere h-dvh w-full overflow-y-auto px-4 py-8 text-foreground">
+      <div className="flex min-h-full items-center justify-center">
+        <div
+          className={cn(
+            "w-full max-w-md rounded-2xl border border-border/80 bg-background/85 p-6 shadow-xl backdrop-blur-md sm:p-8",
+            className,
+          )}
+        >
+          <div className="mb-6 flex flex-col items-center gap-3 text-center">
+            <LogoWordmark />
+            <div className="space-y-1">
+              <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
+              {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
+            </div>
           </div>
+          {children}
         </div>
-        {children}
       </div>
     </div>
   );

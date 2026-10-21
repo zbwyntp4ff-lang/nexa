@@ -27,6 +27,7 @@ class VectorStore(ABC):
         top_k: int,
         project_id: str | None = None,
         conversation_id: str | None = None,
+        user_id: str | None = None,
     ) -> list[tuple[KnowledgeChunk, float]]:
         """Return the ``top_k`` most similar chunks (scoped) with their scores."""
     @abstractmethod
@@ -35,10 +36,23 @@ class VectorStore(ABC):
     @abstractmethod
     def chunk_count(self, document_id: str | None = None) -> int:
         """Return the number of stored chunks (optionally for one document)."""
-def _visible(chunk: KnowledgeChunk, project_id: str | None, conversation_id: str | None) -> bool:
-    """Global (``None``) scope is visible everywhere; project/conversation
-    scoped chunks are only visible to a matching request - Part A must never
-    see Part B's project-scoped documents."""
+    def delete_user(self, user_id: str) -> int:
+        """Delete every chunk owned by ``user_id``. Default: unsupported."""
+        raise NotImplementedError
+def _visible(
+    chunk: KnowledgeChunk,
+    project_id: str | None,
+    conversation_id: str | None,
+    user_id: str | None = None,
+) -> bool:
+    """Project/conversation scoped chunks are only visible to a matching request.
+    When ``user_id`` is set, only that user's chunks (and legacy null-owner rows
+    are **not** shared across users in cloud mode — null owner is visible only
+    when the caller also has no user_id, e.g. single-user desktop).
+    """
+    if user_id is not None:
+        if chunk.user_id != user_id:
+            return False
     if chunk.project_id is not None and chunk.project_id != project_id:
         return False
     if chunk.conversation_id is not None and chunk.conversation_id != conversation_id:
@@ -81,19 +95,28 @@ class LocalVectorStore(VectorStore):
         top_k: int,
         project_id: str | None = None,
         conversation_id: str | None = None,
+        user_id: str | None = None,
     ) -> list[tuple[KnowledgeChunk, float]]:
         with self._lock:
             candidates = list(self._chunks.values())
         scored = [
             (chunk, cosine_similarity(query_vector, chunk.embedding))
             for chunk in candidates
-            if _visible(chunk, project_id, conversation_id)
+            if _visible(chunk, project_id, conversation_id, user_id)
         ]
         scored.sort(key=lambda pair: pair[1], reverse=True)
         return scored[: max(top_k, 0)]
     def delete_document(self, document_id: str) -> int:
         with self._lock:
             to_remove = [cid for cid, chunk in self._chunks.items() if chunk.document_id == document_id]
+            for cid in to_remove:
+                del self._chunks[cid]
+            if to_remove:
+                self._flush()
+            return len(to_remove)
+    def delete_user(self, user_id: str) -> int:
+        with self._lock:
+            to_remove = [cid for cid, chunk in self._chunks.items() if chunk.user_id == user_id]
             for cid in to_remove:
                 del self._chunks[cid]
             if to_remove:

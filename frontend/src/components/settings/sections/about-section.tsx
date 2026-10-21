@@ -1,6 +1,7 @@
 "use client";
 import * as React from "react";
 import { LogoMark } from "@/components/common/logo";
+import { fetchLegalIndex, type LegalHolder } from "@/lib/auth-api";
 import { useT } from "@/lib/i18n";
 import {
   getDesktopAppInfo,
@@ -13,9 +14,13 @@ export function AboutSection() {
   const t = useT();
   const [appInfo, setAppInfo] = React.useState<NexaAppInfo | null>(null);
   const [backendStatus, setBackendStatus] = React.useState<NexaBackendStatus | null>(null);
+  const [holder, setHolder] = React.useState<LegalHolder | null>(null);
   React.useEffect(() => {
     void getDesktopAppInfo().then(setAppInfo);
     void getDesktopBackendStatus().then(setBackendStatus);
+    void fetchLegalIndex()
+      .then((data) => setHolder(data.holder))
+      .catch(() => undefined);
   }, []);
   return (
     <div className="space-y-4">
@@ -47,7 +52,22 @@ export function AboutSection() {
             </dd>
           </>
         )}
+        {holder && (
+          <>
+            <dt className="text-muted-foreground">{t("about.rightsHolder")}</dt>
+            <dd className="font-medium">{holder.name}</dd>
+            <dt className="text-muted-foreground">{t("about.rightsKind")}</dt>
+            <dd className="font-medium">{holder.kind_label}</dd>
+            {holder.contact && (
+              <>
+                <dt className="text-muted-foreground">{t("about.rightsContact")}</dt>
+                <dd className="font-medium break-all">{holder.contact}</dd>
+              </>
+            )}
+          </>
+        )}
       </dl>
+      <p className="text-xs text-muted-foreground">{t("about.rightsHint")}</p>
     </div>
   );
 }

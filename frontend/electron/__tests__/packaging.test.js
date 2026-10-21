@@ -34,6 +34,19 @@ describe("preload IPC surface", () => {
   it("validates openExternal only accepts http(s) URLs before touching IPC", () => {
     expect(preloadSource).toMatch(/ALLOWED_EXTERNAL_URL/);
   });
+  it("exposes openPath with path validation and no generic invoke", () => {
+    expect(preloadSource).toContain("openPath:");
+    expect(preloadSource).toContain("nexa:open-path");
+    expect(preloadSource).toMatch(/filesystem paths only/);
+  });
+});
+describe("main process open-path handler", () => {
+  it("registers nexa:open-path with allowlist checks and confirmation dialog", () => {
+    expect(mainSource).toContain("nexa:open-path");
+    expect(mainSource).toContain("outside allowlisted");
+    expect(mainSource).toContain("showMessageBox");
+    expect(mainSource).toContain("shell.openPath");
+  });
 });
 describe("main process security posture", () => {
   it("disables nodeIntegration and enables contextIsolation + sandbox", () => {

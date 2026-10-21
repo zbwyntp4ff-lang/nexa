@@ -4,6 +4,8 @@ import type { AuthStatus, AuthUser, RegisterPayload } from "@/lib/auth-api";
 import {
   fetchAuthStatus,
   fetchMe,
+  initialAuthScreen,
+  deleteAccount,
   loginAccount,
   logoutAccount,
   registerAccount,
@@ -12,6 +14,20 @@ import {
   forgotPassword,
   verifyEmail,
 } from "@/lib/auth-api";
+import { clearSessionToken, setSessionToken } from "@/lib/session-token";
+import { useChatStore } from "@/store/chat-store";
+
+function bindChatUser(userId: string | null) {
+  try {
+    const chat = useChatStore.getState();
+    chat.bindUser(userId);
+    if (userId) {
+      void chat.hydrateFromServer();
+    }
+  } catch {
+    /* chat store may be unavailable during SSR */
+  }
+}
 
 export type AuthScreen = "login" | "ownerSetup" | "verify" | "forgot" | "reset";
 
@@ -31,6 +47,7 @@ interface AuthState {
   resend: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  deleteMyAccount: () => Promise<void>;
   requestReset: (email: string) => Promise<void>;
   confirmReset: (code: string, password: string, confirm: string) => Promise<void>;
 }
@@ -52,16 +69,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const authStatus = await fetchAuthStatus();
       try {
         const { user } = await fetchMe();
+        bindChatUser(user.id);
         set({ status: "authenticated", user, authStatus, screen: "login" });
       } catch {
+        clearSessionToken();
+        bindChatUser(null);
         set({
           status: "anonymous",
           user: null,
           authStatus,
-          screen: authStatus.registration_open ? "ownerSetup" : "login",
+          screen: initialAuthScreen(authStatus),
         });
       }
     } catch {
+      bindChatUser(null);
       set({ status: "anonymous", user: null, authStatus: null, screen: "login" });
     }
   },
@@ -69,16 +90,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setupOwner: async (payload) => {
     const result = await registerAccount(payload);
     if (result.ready) {
+      setSessionToken(result.session_token);
+      let authStatus = get().authStatus;
+      try {
+        authStatus = await fetchAuthStatus();
+      } catch {
+        authStatus = {
+          single_user: authStatus?.single_user ?? false,
+          has_user: true,
+          registration_open: authStatus?.registration_open ?? true,
+          skip_email_verification: authStatus?.skip_email_verification ?? true,
+        };
+      }
+      bindChatUser(result.user.id);
       set({
         status: "authenticated",
         user: result.user,
         screen: "login",
-        authStatus: {
-          single_user: true,
-          has_user: true,
-          registration_open: false,
-          skip_email_verification: true,
-        },
+        authStatus,
       });
       return;
     }
@@ -110,6 +139,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   login: async (email, password) => {
     try {
       const result = await loginAccount(email, password);
+      setSessionToken(result.session_token);
+      bindChatUser(result.user.id);
       set({ status: "authenticated", user: result.user, screen: "login" });
     } catch (err) {
       const code = (err as { code?: string })?.code;
@@ -124,13 +155,51 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       await logoutAccount();
     } finally {
+      clearSessionToken();
+      bindChatUser(null);
       const authStatus = get().authStatus;
       set({
         status: "anonymous",
         user: null,
-        screen: authStatus?.registration_open ? "ownerSetup" : "login",
+        screen: initialAuthScreen(authStatus ?? null),
       });
     }
+  },
+
+  deleteMyAccount: async () => {
+    const userId = get().user?.id;
+    await deleteAccount();
+    clearSessionToken();
+    if (userId) {
+      try {
+        const chat = useChatStore.getState();
+        const buckets = { ...chat.buckets };
+        delete buckets[userId];
+        useChatStore.setState({
+          buckets,
+          ownerUserId: null,
+          conversations: [],
+          activeConversationId: null,
+          projects: [],
+        });
+      } catch {
+        bindChatUser(null);
+      }
+    } else {
+      bindChatUser(null);
+    }
+    let authStatus = get().authStatus;
+    try {
+      authStatus = await fetchAuthStatus();
+    } catch {
+      /* keep prior */
+    }
+    set({
+      status: "anonymous",
+      user: null,
+      authStatus,
+      screen: initialAuthScreen(authStatus ?? null),
+    });
   },
 
   requestReset: async (email) => {

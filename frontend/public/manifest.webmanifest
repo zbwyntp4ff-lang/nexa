@@ -1,0 +1,26 @@
+{
+  "name": "NEXA AI",
+  "short_name": "NEXA",
+  "description": "NEXA AI — Think. Create. Act. Chat, agent, research, voice.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#141420",
+  "theme_color": "#141420",
+  "lang": "ru",
+  "icons": [
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

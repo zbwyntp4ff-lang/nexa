@@ -36,6 +36,11 @@ _GAME = re.compile(r"(игр|game|arcade|canvas)", re.I)
 _CAR = re.compile(r"(машин|car|авто|vehicle)", re.I)
 _COIN = re.compile(r"(монет|coin|collect|собира)", re.I)
 _ENEMY = re.compile(r"(враг|enemy|enemies|избег\w*\s+враг)", re.I)
+_THREE_D = re.compile(r"(3\s*d|three\.?js|webgl|трёхмер|трехмер|объ[её]мн)", re.I)
+_RACING = re.compile(r"(гонк|racing|race|трек|track)", re.I)
+_FLIGHT = re.compile(r"(пол[её]т|flight|самол[её]т|plane|авиа)", re.I)
+_TANK = re.compile(r"(танк|tank)", re.I)
+_ADVENTURE = re.compile(r"(приключ|adventure|квест|quest|портал|portal)", re.I)
 _SITE = re.compile(r"(сайт|website|landing|лендинг|страниц)", re.I)
 _APP = re.compile(r"(приложен|app|frontend|react|next|vite)", re.I)
 _BACKEND = re.compile(r"(api|backend|сервер|server|fastapi|express)", re.I)
@@ -57,15 +62,38 @@ def understand_request(message: str) -> RequestUnderstanding:
     technologies: list[str] = []
     unknowns: list[str] = []
 
-    if _GAME.search(text):
+    if _GAME.search(text) or (
+        _THREE_D.search(text)
+        and (_RACING.search(text) or _FLIGHT.search(text) or _TANK.search(text) or _ADVENTURE.search(text))
+    ):
         project_type = "web_game"
         technologies = ["HTML", "CSS", "JavaScript"]
         must_have.extend(["игровой цикл", "управление", "очки/прогресс"])
         ui_ux.append("canvas или DOM-поле")
-        if _CAR.search(text):
+        if _THREE_D.search(text) or _RACING.search(text) or _FLIGHT.search(text) or _TANK.search(text) or _ADVENTURE.search(text):
+            technologies.append("Three.js")
+            features.append("3D сцена Three.js")
+            must_have.append("WebGL / Three.js рендер")
+            ui_ux.append("3D canvas preview")
+        if _RACING.search(text):
+            features.append("гонка")
+            must_have.append("трасса и финиш")
+        if _FLIGHT.search(text):
+            features.append("полёт")
+            must_have.append("самолёт и кольца/цели")
+        if _TANK.search(text):
+            features.append("танковый бой")
+            must_have.append("танк и выстрелы")
+        if _ADVENTURE.search(text):
+            features.append("приключение")
+            must_have.append("сбор предметов и цель")
+        if _CAR.search(text) and not _THREE_D.search(text) and not _RACING.search(text):
             features.append("управление машиной")
             must_have.append("машина как игрок")
-        if _COIN.search(text):
+        elif _CAR.search(text) and (_THREE_D.search(text) or _RACING.search(text)):
+            features.append("управление машиной")
+            must_have.append("машина как игрок")
+        if _COIN.search(text) and not (_THREE_D.search(text) or _RACING.search(text) or _FLIGHT.search(text) or _TANK.search(text) or _ADVENTURE.search(text)):
             features.append("сбор монет")
             must_have.append("монеты на поле")
         if _ENEMY.search(text):
