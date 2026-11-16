@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import shutil
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -130,14 +131,23 @@ class PluginManager:
     ) -> list[dict[str, Any]]:
         items = self._audit.for_plugin(plugin_id, limit) if plugin_id else self._audit.all(limit)
         if user_id is not None:
-            items = [e for e in items if getattr(e, "user_id", None) in (None, user_id)]
+            items = [e for e in items if e.user_id == user_id]
         return [e.model_dump() for e in items]
 
     def delete_user_data(self, user_id: str) -> int:
         """Disconnect and wipe all plugin connections for ``user_id``."""
         # User-scoped plugin tools are never registered globally, so deleting
         # one user's connection must not unregister another user's capability.
-        return self._store.delete_user(user_id)
+        removed = self._store.delete_user(user_id)
+        candidate = self._workspace_root / hashlib.sha256(user_id.encode("utf-8")).hexdigest()
+        if candidate.is_symlink():
+            candidate.unlink()
+        elif candidate.exists():
+            root = self._workspace_root.resolve()
+            resolved = candidate.resolve()
+            if resolved != root and root in resolved.parents:
+                shutil.rmtree(resolved)
+        return removed
 
     async def connect(
         self,
@@ -192,13 +202,13 @@ class PluginManager:
             if user_id is None:
                 self._unregister_tool(plugin_id)
             self._store.upsert(state)
-            self._audit.record(plugin_id=plugin_id, action="connect", status="failed", detail=probe.detail)
+            self._audit.record(plugin_id=plugin_id, action="connect", status="failed", user_id=user_id, detail=probe.detail)
             logger.info("plugin connect failed id=%s status=%s", plugin_id, probe.status)
             return self.public_card(plugin_id, user_id=user_id)
         self._store.upsert(state)
         if user_id is None:
             self._register_tool(plugin_id)
-        self._audit.record(plugin_id=plugin_id, action="connect", status="ok", detail=probe.detail)
+        self._audit.record(plugin_id=plugin_id, action="connect", status="ok", user_id=user_id, detail=probe.detail)
         logger.info("plugin connected id=%s status=%s user=%s", plugin_id, probe.status, user_id or "-")
         return self.public_card(plugin_id, user_id=user_id)
 
@@ -214,7 +224,7 @@ class PluginManager:
                 status="disconnected",
             )
         )
-        self._audit.record(plugin_id=plugin_id, action="disconnect", status="ok")
+        self._audit.record(plugin_id=plugin_id, action="disconnect", status="ok", user_id=user_id)
         logger.info("plugin disconnected id=%s user=%s", plugin_id, user_id or "-")
         return self.public_card(plugin_id, user_id=user_id)
 
@@ -236,7 +246,7 @@ class PluginManager:
         elif state.enabled:
             state.status = probe.status
         self._store.upsert(state)
-        self._audit.record(plugin_id=plugin_id, action="diagnose", status="ok" if probe.ok else "failed", detail=probe.detail)
+        self._audit.record(plugin_id=plugin_id, action="diagnose", status="ok" if probe.ok else "failed", user_id=user_id, detail=probe.detail)
         return probe
 
     async def set_permissions(
@@ -252,7 +262,7 @@ class PluginManager:
             raise PluginValidationError(f"Unknown permissions: {', '.join(unknown)}")
         state.granted_permissions = [p for p in permissions if p in allowed]
         self._store.upsert(state)
-        self._audit.record(plugin_id=plugin_id, action="permissions", status="ok", detail=",".join(state.granted_permissions))
+        self._audit.record(plugin_id=plugin_id, action="permissions", status="ok", user_id=user_id, detail=",".join(state.granted_permissions))
         return self.public_card(plugin_id, user_id=user_id)
 
     async def invoke(
@@ -287,18 +297,18 @@ class PluginManager:
         except PluginConfirmationRequiredError:
             raise
         except TimeoutError as exc:
-            self._audit.record(plugin_id=plugin_id, action=action, status="timeout")
+            self._audit.record(plugin_id=plugin_id, action=action, status="timeout", user_id=user_id)
             raise PluginTimeoutError(f"Plugin '{plugin_id}' action '{action}' timed out") from exc
         except PathTraversalError:
-            self._audit.record(plugin_id=plugin_id, action=action, status="denied", detail="path traversal")
+            self._audit.record(plugin_id=plugin_id, action=action, status="denied", user_id=user_id, detail="path traversal")
             raise
         except Exception as exc:  # noqa: BLE001
             msg = redact_secrets(str(exc))
             logger.warning("plugin invoke failed id=%s action=%s err=%s", plugin_id, action, msg)
-            self._audit.record(plugin_id=plugin_id, action=action, status="error", detail=msg)
+            self._audit.record(plugin_id=plugin_id, action=action, status="error", user_id=user_id, detail=msg)
             raise
         status = "ok" if result.success else "error"
-        self._audit.record(plugin_id=plugin_id, action=action, status=status, detail=result.error or "")
+        self._audit.record(plugin_id=plugin_id, action=action, status=status, user_id=user_id, detail=result.error or "")
         logger.info("plugin invoke id=%s action=%s success=%s", plugin_id, action, result.success)
         return result
 
