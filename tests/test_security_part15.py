@@ -216,3 +216,8 @@ def test_plugins_ok_with_bearer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
         app.dependency_overrides.clear()
         get_plugin_manager.cache_clear()
         get_default_tool_registry.cache_clear()
+
+
+def test_non_global_special_use_addresses_are_blocked():
+    assert is_ip_blocked("100.64.0.1") is True  # shared address space
+    assert is_ip_blocked("192.0.2.10") is True  # documentation range
