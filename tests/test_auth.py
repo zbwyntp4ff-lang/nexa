@@ -476,3 +476,13 @@ def test_google_oauth_file_enables_provider(tmp_path, monkeypatch):
     status = {row["id"]: row["enabled"] for row in list_provider_status(settings)}
     assert status["google"] is True
     assert status["github"] is False
+
+
+
+def test_oauth_email_verified_string_false_is_not_trusted():
+    from app.auth.oauth import _as_bool
+
+    assert _as_bool("false", default=True) is False
+    assert _as_bool("0", default=True) is False
+    assert _as_bool("true") is True
+    assert _as_bool(True) is True
