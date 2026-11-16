@@ -40,6 +40,10 @@ jobs:
             tests/test_knowledge_rag.py \
             tests/test_security_part15.py \
             tests/test_cloud_isolation.py \
+            tests/test_attachments.py \
+            tests/test_model_router.py \
+            tests/test_learning_memory.py \
+            tests/test_video_intent.py \
             -q --tb=short -m "not network"
       - name: Write offline eval reports
         env:
