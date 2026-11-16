@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -316,7 +317,12 @@ class PluginManager:
             except ValueError:
                 logger.warning("plugin secret decrypt failed id=%s key=%s", state.plugin_id, key)
         return PluginContext(
-            workspace_root=self._workspace_root,
+            # Each account receives a distinct filesystem namespace. Hash the
+            # internal user id so it can never become a path component.
+            workspace_root=self._workspace_root / (
+                "system" if state.user_id is None
+                else hashlib.sha256(state.user_id.encode("utf-8")).hexdigest()
+            ),
             granted_permissions=frozenset(state.granted_permissions),
             settings=dict(state.settings),
             secrets=decrypted,
