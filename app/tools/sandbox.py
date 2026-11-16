@@ -26,11 +26,18 @@ def user_workspace_root(sandbox_root: Path, user_id: str | None) -> Path:
     if not _USER_ID_RE.fullmatch(uid):
         raise PathTraversalError("invalid user workspace identifier")
     root = sandbox_root.resolve()
-    scoped = root / "users" / uid
+    users_dir = root / "users"
+    users_dir.mkdir(parents=True, exist_ok=True)
+    resolved_users_dir = users_dir.resolve()
+    try:
+        resolved_users_dir.relative_to(root)
+    except ValueError as exc:
+        raise PathTraversalError("user workspace directory escapes configured root") from exc
+    scoped = resolved_users_dir / uid
     scoped.mkdir(parents=True, exist_ok=True)
     resolved = scoped.resolve()
     try:
-        resolved.relative_to(root)
+        resolved.relative_to(resolved_users_dir)
     except ValueError as exc:
         raise PathTraversalError("user workspace escapes configured root") from exc
     return resolved
