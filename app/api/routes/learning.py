@@ -7,9 +7,11 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.api.deps import get_memory_manager_dep
+from app.api.deps import get_auth_service, get_memory_manager_dep, get_settings
 from app.api.security_deps import require_user_when_enforced
 from app.auth.models import UserRecord
+from app.auth.service import AuthService
+from app.config.settings import Settings
 from app.knowledge.knowledge_base import KnowledgeBase, get_knowledge_base
 from app.learning.eval import FeedbackStats, compute_feedback_stats, run_eval_snapshot
 from app.learning.fine_tuning import capability_report
@@ -23,6 +25,20 @@ from app.learning.settings import LearningSettings, get_learning_settings, save_
 from app.memory.manager import MemoryManager
 
 router = APIRouter(prefix="/api/v1/learning", tags=["learning"])
+
+
+def require_learning_admin(
+    user: Annotated[UserRecord | None, Depends(require_user_when_enforced)],
+    auth: Annotated[AuthService, Depends(get_auth_service)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> None:
+    """Protect shared learning controls and global improvement proposals."""
+    if user is None:
+        if settings.tokens_enforce:
+            raise HTTPException(status_code=401, detail="Authentication required.")
+        return
+    if not auth.is_owner(user):
+        raise HTTPException(status_code=403, detail="Only the NEXA owner can manage global learning controls.")
 
 
 def _knowledge_base() -> KnowledgeBase:
@@ -127,7 +143,7 @@ async def get_settings_route(
     return get_learning_settings()
 
 
-@router.put("/settings", response_model=LearningSettings)
+@router.put("/settings", response_model=LearningSettings, dependencies=[Depends(require_learning_admin)])
 async def put_settings(
     body: LearningSettingsUpdate,
     _user: Annotated[UserRecord | None, Depends(require_user_when_enforced)] = None,
@@ -139,28 +155,28 @@ async def put_settings(
     return save_learning_settings(LearningSettings.model_validate(data))
 
 
-@router.post("/eval/run", response_model=FeedbackStats)
+@router.post("/eval/run", response_model=FeedbackStats, dependencies=[Depends(require_learning_admin)])
 async def eval_run(
     _user: Annotated[UserRecord | None, Depends(require_user_when_enforced)] = None,
 ) -> FeedbackStats:
     return run_eval_snapshot()
 
 
-@router.get("/proposals", response_model=list[ImprovementProposal])
+@router.get("/proposals", response_model=list[ImprovementProposal], dependencies=[Depends(require_learning_admin)])
 async def proposals_list(
     _user: Annotated[UserRecord | None, Depends(require_user_when_enforced)] = None,
 ) -> list[ImprovementProposal]:
     return list_proposals()
 
 
-@router.post("/proposals/generate", response_model=list[ImprovementProposal])
+@router.post("/proposals/generate", response_model=list[ImprovementProposal], dependencies=[Depends(require_learning_admin)])
 async def proposals_generate(
     _user: Annotated[UserRecord | None, Depends(require_user_when_enforced)] = None,
 ) -> list[ImprovementProposal]:
     return propose_from_feedback()
 
 
-@router.post("/proposals/{proposal_id}/status", response_model=ImprovementProposal)
+@router.post("/proposals/{proposal_id}/status", response_model=ImprovementProposal, dependencies=[Depends(require_learning_admin)])
 async def proposals_status(
     proposal_id: str,
     body: ProposalStatusUpdate,
@@ -172,7 +188,7 @@ async def proposals_status(
     return item
 
 
-@router.post("/mark-indexed", response_model=LearningSettings)
+@router.post("/mark-indexed", response_model=LearningSettings, dependencies=[Depends(require_learning_admin)])
 async def mark_indexed(
     _user: Annotated[UserRecord | None, Depends(require_user_when_enforced)] = None,
 ) -> LearningSettings:
