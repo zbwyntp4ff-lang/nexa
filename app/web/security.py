@@ -65,6 +65,8 @@ def validate_url(url: str, resolver: Resolver = _default_resolver) -> str:
         raise SSRFProtectionError(
             f"Scheme '{scheme or '(none)'}' is not allowed. Only http/https are permitted."
         )
+    if parsed.username is not None or parsed.password is not None:
+        raise InvalidURLError("Credentials embedded in URLs are not allowed.")
     hostname = parsed.hostname
     if not hostname:
         raise InvalidURLError(f"URL has no host: {url}")
