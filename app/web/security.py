@@ -45,6 +45,7 @@ def is_ip_blocked(ip_str: str) -> bool:
         or ip.is_reserved
         or ip.is_multicast
         or ip.is_unspecified
+        or not ip.is_global
     )
 def validate_url(url: str, resolver: Resolver = _default_resolver) -> str:
     """Validate ``url`` is safe to fetch. Returns ``url`` unchanged if so.
