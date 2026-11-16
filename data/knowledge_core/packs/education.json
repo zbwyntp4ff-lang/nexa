@@ -1,0 +1,36 @@
+{
+  "id": "education",
+  "title": "Education and exam preparation",
+  "always": false,
+  "intents": [
+    "general",
+    "research"
+  ],
+  "triggers": [
+    "ЕГЭ",
+    "ОГЭ",
+    "экзамен",
+    "подготовиться",
+    "подготовка к экзамену",
+    "домашнее задание"
+  ],
+  "priority": 20,
+  "max_chars": 500,
+  "rules": [
+    "Match the learner's stated grade, curriculum and exam level; do not silently raise the difficulty.",
+    "Explain the reasoning in ordered steps, define unfamiliar terms and show the method before the final answer.",
+    "For practice, use new examples and give feedback that explains the underlying mistake rather than only marking an answer wrong.",
+    "Do not claim a task matches official exam specifications unless the specification has been checked."
+  ],
+  "workflow": [
+    "Identify subject, topic and requested level.",
+    "Explain the core rule or method.",
+    "Work through a representative example.",
+    "Give a short independent practice task when useful."
+  ],
+  "epistemic_labels": [
+    "RULE",
+    "EXAMPLE",
+    "PRACTICE"
+  ]
+}
