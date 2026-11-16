@@ -189,3 +189,25 @@ def test_api_plugins_require_auth(tmp_path: Path):
     conn = client.post("/api/v1/plugins/vscode/connect", json={"permissions": ["files.read"]})
     assert conn.status_code == 401
     get_plugin_manager.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_user_plugin_connections_are_not_registered_globally_or_shared(mgr: PluginManager):
+    alice = await mgr.connect(
+        "vscode", user_id="alice", permissions=["files.read", "files.write"]
+    )
+    assert alice["enabled"] is True
+    assert "plugin_vscode" not in {tool.name for tool in mgr._registry.list()}
+
+    bob = await mgr.connect(
+        "vscode", user_id="bob", permissions=["files.read", "files.write"]
+    )
+    assert bob["enabled"] is True
+
+    alice_ctx = mgr._context(mgr.adapter("vscode"), mgr._store.get("vscode", user_id="alice"))
+    bob_ctx = mgr._context(mgr.adapter("vscode"), mgr._store.get("vscode", user_id="bob"))
+    assert alice_ctx.workspace_root != bob_ctx.workspace_root
+
+    await mgr.disconnect("vscode", user_id="alice")
+    assert mgr._store.get("vscode", user_id="bob").enabled is True
+    assert "plugin_vscode" not in {tool.name for tool in mgr._registry.list()}
