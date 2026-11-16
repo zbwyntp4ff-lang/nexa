@@ -93,8 +93,7 @@ class AttachmentManager:
         """True when ``user_id`` may access the record (None = no ownership filter)."""
         if user_id is None:
             return True
-        owner = stored.record.user_id
-        return owner is None or owner == user_id
+        return stored.record.user_id == user_id
 
     async def upload(
         self, filename: str, raw: bytes, *, user_id: str | None = None
@@ -233,7 +232,7 @@ class AttachmentManager:
                 raise AttachmentNotFoundError(attachment_id)
             records.append(stored.record)
         return records
-    def document_context(self, attachment_ids: list[str], query: str, max_chars: int | None = None) -> str:
+    def document_context(self, attachment_ids: list[str], query: str, max_chars: int | None = None, *, user_id: str | None = None) -> str:
         """Build a bounded "Document Context" block for ``attachment_ids``.
         Only document-kind, successfully-processed attachments contribute.
         Never returns a raw full-document dump - always chunk-selected and
@@ -245,6 +244,7 @@ class AttachmentManager:
             attachment_id
             for attachment_id in attachment_ids
             if (stored := self._records.get(attachment_id)) is not None
+            and self._owned(stored, user_id)
             and stored.record.kind == AttachmentKind.DOCUMENT
             and stored.record.status == AttachmentStatus.READY
         ]
@@ -265,22 +265,24 @@ class AttachmentManager:
             parts.append(block)
             used += len(block)
         return "\n\n".join(parts)[:budget]
-    def image_payloads(self, attachment_ids: list[str]) -> list[tuple[bytes, str]]:
+    def image_payloads(self, attachment_ids: list[str], *, user_id: str | None = None) -> list[tuple[bytes, str]]:
         """Return ``(raw_bytes, mime_type)`` for the image-kind ids in ``attachment_ids``."""
         self.cleanup_expired()
         payloads: list[tuple[bytes, str]] = []
         for attachment_id in attachment_ids:
             stored = self._records.get(attachment_id)
-            if stored is None or stored.record.kind != AttachmentKind.IMAGE:
+            if stored is None or not self._owned(stored, user_id) or stored.record.kind != AttachmentKind.IMAGE:
                 continue
             if stored.record.status != AttachmentStatus.READY or stored.temp_path is None:
                 continue
             payloads.append((stored.temp_path.read_bytes(), stored.record.mime_type))
         return payloads
-    def has_images(self, attachment_ids: list[str]) -> bool:
+    def has_images(self, attachment_ids: list[str], *, user_id: str | None = None) -> bool:
         self.cleanup_expired()
         return any(
-            (stored := self._records.get(attachment_id)) is not None and stored.record.kind == AttachmentKind.IMAGE
+            (stored := self._records.get(attachment_id)) is not None
+            and self._owned(stored, user_id)
+            and stored.record.kind == AttachmentKind.IMAGE
             for attachment_id in attachment_ids
         )
 def _display_name(filename: str) -> str:
