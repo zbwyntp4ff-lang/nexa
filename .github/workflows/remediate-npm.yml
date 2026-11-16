@@ -57,6 +57,7 @@ jobs:
           npm install --no-audit --no-fund
           npm update --no-audit --no-fund
           npm dedupe --no-audit --no-fund
+          npm audit fix --no-fund
           npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Write dependency audit report
@@ -88,10 +89,6 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-      - name: Block high and critical npm advisories
-        working-directory: frontend
-        run: npm audit --audit-level=high
-
       - name: Run frontend tests
         working-directory: frontend
         run: npm test
@@ -111,7 +108,14 @@ jobs:
           git add frontend/package.json frontend/package-lock.json
           if ! git diff --cached --quiet; then
             git commit -m "fix(deps): upgrade vulnerable frontend toolchain"
+            git fetch origin "${{ github.ref_name }}"
+            git rebase "origin/${{ github.ref_name }}"
             git push origin "HEAD:${{ github.ref_name }}"
           else
             echo "No dependency changes to commit."
           fi
+
+      - name: Block high and critical npm advisories
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
