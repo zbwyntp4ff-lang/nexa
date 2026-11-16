@@ -19,6 +19,7 @@ from app.video_generation.motion import build_motion_plan
 @dataclass
 class _Job:
     status: VideoJobStatus
+    user_id: str | None = None
     task: asyncio.Task | None = None
 
 
@@ -27,9 +28,9 @@ class VideoJobStore:
         self._jobs: dict[str, _Job] = {}
         self._lock = asyncio.Lock()
 
-    async def create(self, job_id: str, status: VideoJobStatus) -> VideoJobStatus:
+    async def create(self, job_id: str, status: VideoJobStatus, *, user_id: str | None = None) -> VideoJobStatus:
         async with self._lock:
-            self._jobs[job_id] = _Job(status=status)
+            self._jobs[job_id] = _Job(status=status, user_id=user_id)
         return status
 
     async def update(self, job_id: str, **fields) -> VideoJobStatus:
@@ -40,10 +41,16 @@ class VideoJobStore:
             job.status = VideoJobStatus(**data)
             return job.status
 
-    async def get(self, job_id: str) -> VideoJobStatus | None:
+    async def get(self, job_id: str, *, user_id: str | None = None, enforce: bool = False) -> VideoJobStatus | None:
         async with self._lock:
             job = self._jobs.get(job_id)
-            return job.status if job else None
+            if job is None:
+                return None
+            if enforce and (user_id is None or job.user_id != user_id):
+                return None
+            if user_id is not None and job.user_id != user_id:
+                return None
+            return job.status
 
     async def attach_task(self, job_id: str, task: asyncio.Task) -> None:
         async with self._lock:
@@ -102,17 +109,17 @@ class ImageToVideoService:
             message="Queued image-to-video job",
             intent="IMAGE_TO_VIDEO",
         )
-        await self._store.create(job_id, status)
-        task = asyncio.create_task(self._run(job_id, attachment_ids, prompt))
+        await self._store.create(job_id, status, user_id=user_id)
+        task = asyncio.create_task(self._run(job_id, attachment_ids, prompt, user_id))
         await self._store.attach_task(job_id, task)
         return status
 
-    async def _run(self, job_id: str, attachment_ids: list[str], prompt: str) -> None:
+    async def _run(self, job_id: str, attachment_ids: list[str], prompt: str, user_id: str | None) -> None:
         try:
             await self._store.update(
                 job_id, phase="analyzing", progress=10, message="Analyzing image…"
             )
-            payloads = self._attachments.image_payloads(attachment_ids)
+            payloads = self._attachments.image_payloads(attachment_ids, user_id=user_id)
             if not payloads:
                 raise AttachmentNotFoundError(attachment_ids[0] if attachment_ids else "unknown")
             image_bytes, mime_type = payloads[0]
