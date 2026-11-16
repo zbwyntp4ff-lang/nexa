@@ -50,6 +50,21 @@ def _configured(client_id: str | None, client_secret: str | None) -> bool:
     return bool((client_id or "").strip() and (client_secret or "").strip())
 
 
+def _as_bool(value: Any, *, default: bool = False) -> bool:
+    """Parse provider booleans without treating the string "false" as true."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes"}:
+            return True
+        if normalized in {"false", "0", "no", ""}:
+            return False
+    if value is None:
+        return default
+    return bool(value)
+
+
 def provider_configs(settings: Any) -> dict[ProviderId, ProviderConfig]:
     out: dict[ProviderId, ProviderConfig] = {}
     google = load_google_oauth(settings)
@@ -212,7 +227,7 @@ async def _google_profile(
         provider="google",
         subject=sub,
         email=email,
-        email_verified=bool(data.get("email_verified", True)),
+        email_verified=_as_bool(data.get("email_verified"), default=True),
         first_name=given[:64],
         last_name=family[:64],
         username_hint=_slug(local),
@@ -311,7 +326,7 @@ async def _apple_profile(
         provider="apple",
         subject=sub,
         email=email,
-        email_verified=bool(payload.get("email_verified", True)),
+        email_verified=_as_bool(payload.get("email_verified"), default=True),
         first_name="Apple",
         last_name="User",
         username_hint=_slug(local),
