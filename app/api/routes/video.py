@@ -65,8 +65,15 @@ async def get_video_job(job_id: str, user: _Auth = None) -> VideoJobStatus:
 
 
 @router.get("/video/files/{filename}")
-async def get_video_file(filename: str) -> FileResponse:
+async def get_video_file(filename: str, user: _Auth = None) -> FileResponse:
     settings = get_settings()
+    allowed = await get_video_job_store().can_access_file(
+        Path(filename).name,
+        user_id=user.id if user is not None else None,
+        enforce=settings.tokens_enforce,
+    )
+    if not allowed:
+        raise ModelError("Video file not found.")
     root = resolve_under_project_root(settings.video_storage_dir).resolve()
     candidate = (root / Path(filename).name).resolve()
     if root not in candidate.parents and candidate != root:
