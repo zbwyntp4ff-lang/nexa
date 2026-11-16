@@ -103,7 +103,7 @@ class ProposalStatusUpdate(BaseModel):
     status: Literal["proposed", "accepted", "rejected", "applied"]
 
 
-@router.get("/status", response_model=LearningStatusResponse)
+@router.get("/status", response_model=LearningStatusResponse, dependencies=[Depends(require_learning_admin)])
 async def learning_status(
     memory: MemoryManager = Depends(get_memory_manager_dep),
     kb: KnowledgeBase = Depends(_knowledge_base),
@@ -136,7 +136,7 @@ async def learning_status(
     )
 
 
-@router.get("/settings", response_model=LearningSettings)
+@router.get("/settings", response_model=LearningSettings, dependencies=[Depends(require_learning_admin)])
 async def get_settings_route(
     _user: Annotated[UserRecord | None, Depends(require_user_when_enforced)] = None,
 ) -> LearningSettings:
