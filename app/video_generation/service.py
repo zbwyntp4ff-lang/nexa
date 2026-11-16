@@ -58,7 +58,7 @@ class VideoJobStore:
         async with self._lock:
             for job in self._jobs.values():
                 video_url = job.status.video_url or ""
-                if Path(urlparse(video_url).path).name != filename:
+                if urlparse(video_url).path.rsplit("/", 1)[-1] != filename:
                     continue
                 if enforce and (user_id is None or job.user_id != user_id):
                     return False
