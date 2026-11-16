@@ -47,6 +47,7 @@ jobs:
             tests/test_video_intent.py \
             tests/test_plugins.py \
             tests/test_security_audit_regressions.py \
+            tests/test_page_fetcher_pinning.py \
             tests/test_browser_verify.py \
             -q --tb=short -m "not network"
       - name: Write offline eval reports
