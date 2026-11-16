@@ -42,12 +42,14 @@ jobs:
       - name: Regenerate lockfile and apply compatible fixes
         working-directory: frontend
         run: |
+          npm install --global npm@latest
           npm install --no-audit --no-fund
-          npm audit fix --no-fund
+          npm update --no-audit --no-fund
+          npm dedupe --no-audit --no-fund
 
-      - name: Require no high or critical npm advisories
+      - name: Require a clean npm dependency audit
         working-directory: frontend
-        run: npm audit --audit-level=high
+        run: npm audit
 
       - name: Run frontend tests
         working-directory: frontend
