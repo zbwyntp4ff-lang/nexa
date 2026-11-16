@@ -9,7 +9,7 @@ import re
 SECRET_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*"),
     re.compile(
-        r"""(?i)\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|client[_-]?secret|password|passwd|secret)\s*[:=]\s*["']?[^\s,;\]}'"]+"""
+        r"""(?i)\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|client[_-]?secret|password|passwd|secret)\s*[:=]\s*["']?[^\s,;}"']+"""
     ),
     re.compile(
         r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"
