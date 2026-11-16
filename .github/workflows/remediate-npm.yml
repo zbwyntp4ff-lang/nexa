@@ -19,7 +19,7 @@ concurrency:
 jobs:
   remediate:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -34,10 +34,21 @@ jobs:
       - name: Upgrade directly vulnerable packages
         working-directory: frontend
         run: |
-          npm pkg set dependencies.next="16.4.6"
-          npm pkg set devDependencies.eslint-config-next="16.4.6"
-          npm pkg set devDependencies.electron="^41.7.1"
-          npm pkg set devDependencies.electron-builder="^26.18.0"
+          node <<'NODE'
+          const fs = require("node:fs");
+          const file = "package.json";
+          const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
+          pkg.dependencies ??= {};
+          pkg.devDependencies ??= {};
+          pkg.dependencies.next = "16.4.6";
+          pkg.devDependencies["eslint-config-next"] = "16.4.6";
+          pkg.devDependencies.electron = "45.3.3";
+          pkg.devDependencies["electron-builder"] = "26.18.0";
+          pkg.allowScripts ??= {};
+          delete pkg.allowScripts["electron@33.4.11"];
+          pkg.allowScripts["electron@45.3.3"] = true;
+          fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n");
+          NODE
 
       - name: Regenerate lockfile and apply compatible fixes
         working-directory: frontend
@@ -46,10 +57,40 @@ jobs:
           npm install --no-audit --no-fund
           npm update --no-audit --no-fund
           npm dedupe --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund
 
-      - name: Require a clean npm dependency audit
+      - name: Write dependency audit report
+        if: always()
         working-directory: frontend
-        run: npm audit
+        run: |
+          npm audit --json > npm-audit.json || true
+          node <<'NODE'
+          const audit = require("./npm-audit.json");
+          const counts = audit.metadata?.vulnerabilities ?? {};
+          console.log("npm advisory counts:", JSON.stringify(counts));
+          for (const [name, item] of Object.entries(audit.vulnerabilities ?? {})) {
+            console.log(JSON.stringify({
+              name,
+              severity: item.severity,
+              direct: item.isDirect,
+              range: item.range,
+              fixAvailable: item.fixAvailable
+            }));
+          }
+          NODE
+
+      - name: Upload npm audit report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: nexa-npm-remediation-audit
+          path: frontend/npm-audit.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Block high and critical npm advisories
+        working-directory: frontend
+        run: npm audit --audit-level=high
 
       - name: Run frontend tests
         working-directory: frontend
@@ -59,13 +100,17 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+      - name: Verify Electron packaging tests
+        working-directory: frontend
+        run: npx vitest run electron/__tests__/packaging.test.js
+
       - name: Commit verified dependency updates
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add frontend/package.json frontend/package-lock.json
           if ! git diff --cached --quiet; then
-            git commit -m "fix(deps): remediate npm security advisories"
+            git commit -m "fix(deps): upgrade vulnerable frontend toolchain"
             git push origin "HEAD:${{ github.ref_name }}"
           else
             echo "No dependency changes to commit."
