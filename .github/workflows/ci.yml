@@ -70,4 +70,16 @@ jobs:
         with:
           node-version: "20"
       - run: npm ci
+      - name: Report npm dependency advisories
+        run: |
+          npm audit --json > npm-audit.json || true
+          node -e "const a=require('./npm-audit.json'); for (const [name,v] of Object.entries(a.vulnerabilities||{})) console.log(JSON.stringify({name,severity:v.severity,direct:v.isDirect,range:v.range,fixAvailable:v.fixAvailable,advisories:(v.via||[]).filter(x=>typeof x==='object').map(x=>x.title)}))"
+      - name: Upload npm audit report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: nexa-npm-audit-report
+          path: frontend/npm-audit.json
+          if-no-files-found: ignore
+          retention-days: 7
       - run: npx vitest run electron/__tests__/packaging.test.js
