@@ -135,7 +135,7 @@ class NexaCore:
                     messages.append(ChatMessage(role=ChatRole.SYSTEM, content=content))
                     break
             # Still attach Knowledge Core after client system (e.g. Code mode + build rules).
-            core = _knowledge_core.compose(request.message, task=request.task or "coding")
+            core = _compose_knowledge_core(request.message, task=request.task or "coding")
             if core.text:
                 messages.append(ChatMessage(role=ChatRole.SYSTEM, content=core.text))
         messages.extend(history)
