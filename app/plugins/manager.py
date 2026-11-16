@@ -315,8 +315,8 @@ class PluginManager:
     def restore_connected_tools(self) -> None:
         # The shared agent registry has no per-request user context. Only
         # explicitly system-scoped connections may be exposed as global tools.
-        for state in self._store.all(user_id=None):
-            if state.enabled and state.plugin_id in self._adapters:
+        for state in self._store.all():
+            if state.user_id is None and state.enabled and state.plugin_id in self._adapters:
                 self._register_tool(state.plugin_id)
 
     def _context(self, adapter: PluginAdapter, state: PluginState, confirm: bool = False) -> PluginContext:
