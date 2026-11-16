@@ -188,7 +188,8 @@ class PluginManager:
         if not connected:
             # Do not persist secrets if probe failed
             state.secrets = {}
-            self._unregister_tool(plugin_id)
+            if user_id is None:
+                self._unregister_tool(plugin_id)
             self._store.upsert(state)
             self._audit.record(plugin_id=plugin_id, action="connect", status="failed", detail=probe.detail)
             logger.info("plugin connect failed id=%s status=%s", plugin_id, probe.status)
@@ -229,7 +230,8 @@ class PluginManager:
             state.enabled = False
             state.status = probe.status
             state.connected_at = None
-            self._unregister_tool(plugin_id)
+            if user_id is None:
+                self._unregister_tool(plugin_id)
         elif state.enabled:
             state.status = probe.status
         self._store.upsert(state)
