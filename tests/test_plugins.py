@@ -198,6 +198,8 @@ async def test_user_plugin_connections_are_not_registered_globally_or_shared(mgr
     )
     assert alice["enabled"] is True
     assert "plugin_vscode" not in {tool.name for tool in mgr._registry.list()}
+    mgr.restore_connected_tools()
+    assert "plugin_vscode" not in {tool.name for tool in mgr._registry.list()}
 
     bob = await mgr.connect(
         "vscode", user_id="bob", permissions=["files.read", "files.write"]
