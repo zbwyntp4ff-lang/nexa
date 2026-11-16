@@ -500,3 +500,16 @@ def test_missing_auth_store_starts_empty(tmp_path: Path):
     """A genuinely new install still starts with an empty account database."""
     store = AuthStore(tmp_path / "new-auth.json")
     assert store.list_users() == []
+
+
+def test_ipconfig_output_uses_portable_text_encoding(monkeypatch):
+    import subprocess
+    from app.auth.service import _ipv4s_from_ipconfig
+
+    def fake_check_output(command, **kwargs):
+        assert command == ["ipconfig"]
+        assert kwargs["encoding"] == "utf-8"
+        return "IPv4 Address. . . . . . . . . . . : 192.168.1.25"
+
+    monkeypatch.setattr(subprocess, "check_output", fake_check_output)
+    assert _ipv4s_from_ipconfig() == ["192.168.1.25"]
