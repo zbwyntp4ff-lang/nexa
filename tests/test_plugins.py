@@ -211,3 +211,19 @@ async def test_user_plugin_connections_are_not_registered_globally_or_shared(mgr
     await mgr.disconnect("vscode", user_id="alice")
     assert mgr._store.get("vscode", user_id="bob").enabled is True
     assert "plugin_vscode" not in {tool.name for tool in mgr._registry.list()}
+
+
+def test_plugin_audit_and_workspace_deletion_are_user_scoped(mgr: PluginManager, tmp_path: Path):
+    import hashlib
+
+    mgr._audit.record(plugin_id="vscode", action="read", status="ok", user_id="alice")
+    mgr._audit.record(plugin_id="vscode", action="read", status="ok", user_id="bob")
+    alice_events = mgr.audit("vscode", user_id="alice")
+    assert len(alice_events) == 1
+    assert alice_events[0]["user_id"] == "alice"
+
+    alice_root = mgr._workspace_root / hashlib.sha256(b"alice").hexdigest()
+    alice_root.mkdir(parents=True)
+    (alice_root / "private.txt").write_text("alice data", encoding="utf-8")
+    assert mgr.delete_user_data("alice") == 0
+    assert not alice_root.exists()
