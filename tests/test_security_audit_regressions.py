@@ -28,3 +28,19 @@ def test_api_rate_limit_does_not_trust_client_supplied_forwarded_for(monkeypatch
     finally:
         reset_api_rate_limiter()
         get_settings.cache_clear()
+
+
+def test_secret_redaction_covers_bearer_assignments_and_private_keys():
+    from app.core.secrets import redact_secrets
+
+    bearer = "Bearer " + "abc.def.ghi"
+    assignment = "api_key=" + "nexa_test_credential_12345"
+    private_key = (
+        "-----BEGIN PRIVATE KEY-----\\n"
+        "not-a-real-private-key\\n"
+        "-----END PRIVATE KEY-----"
+    )
+    redacted = redact_secrets(f"{bearer} {assignment} {private_key}")
+    assert "abc.def.ghi" not in redacted
+    assert "nexa_test_credential_12345" not in redacted
+    assert "not-a-real-private-key" not in redacted
