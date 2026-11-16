@@ -340,6 +340,29 @@ function showAboutDialog() {
     buttons: ["OK"],
   });
 }
+/**
+ * Keep packaged desktop accounts in Electron's per-user writable data
+ * directory, not under the install/resources directory. On first launch
+ * after this change, migrate the previous relative auth store if present.
+ */
+function prepareDesktopAuthStore() {
+  const fs = require("node:fs");
+  const userDataDir = app.getPath("userData");
+  const dataDir = path.join(userDataDir, "data");
+  const target = path.join(dataDir, "auth_store.json");
+  fs.mkdirSync(dataDir, { recursive: true });
+  if (!fs.existsSync(target)) {
+    const legacyRoot = app.isPackaged
+      ? path.join(process.resourcesPath, "backend")
+      : path.join(__dirname, "..", "..");
+    const legacy = path.join(legacyRoot, "data", "auth_store.json");
+    if (path.resolve(legacy) !== path.resolve(target) && fs.existsSync(legacy)) {
+      fs.copyFileSync(legacy, target, fs.constants.COPYFILE_EXCL);
+      logger && logger.write("Migrated existing local auth store to userData.");
+    }
+  }
+  return target;
+}
 function createTray() {
   try {
     tray = new Tray(resolveIconPath());
@@ -509,6 +532,7 @@ if (!gotSingleInstanceLock) {
       return;
     }
     createTray();
+    const desktopAuthStorePath = prepareDesktopAuthStore();
     backendManager = new BackendManager({
       url: BACKEND_URL,
       isPackaged: app.isPackaged,
@@ -516,6 +540,7 @@ if (!gotSingleInstanceLock) {
       electronDir: __dirname,
       onLog: (line) => logger.write(line),
       extraEnv: {
+        AUTH_STORE_PATH: desktopAuthStorePath,
         CORS_ALLOWED_ORIGINS: corsOriginsFor(appOrigin),
         // Prefer live Ollama when available; override via process env if set.
         AI_PROVIDER: process.env.AI_PROVIDER || "ollama",
