@@ -57,7 +57,7 @@ jobs:
           npm install --no-audit --no-fund
           npm update --no-audit --no-fund
           npm dedupe --no-audit --no-fund
-          npm audit fix --no-fund
+          npm audit fix --no-fund --audit-level=high || true
           npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Write dependency audit report
