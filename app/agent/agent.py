@@ -13,6 +13,7 @@ Safety rails against infinite loops / runaway execution:
 from __future__ import annotations
 import asyncio
 import time
+from contextvars import ContextVar
 from app.agent.executor import Executor
 from app.agent.models import (
     AgentResult,
@@ -41,6 +42,13 @@ DEFAULT_ERROR_LIMIT = 3
 # them is folded into a model prompt so a slow/local model isn't handed an
 # unbounded amount of text.
 MAX_TOOL_SUMMARY_CHARS = 3_000
+
+# Agent is a cached singleton. Per-run model metadata must live in task-local
+# context rather than instance attributes, otherwise concurrent users can
+# overwrite each other's provider/model attribution.
+_RUN_MODEL_PROVIDER: ContextVar[str | None] = ContextVar("nexa_agent_model_provider", default=None)
+_RUN_MODEL_ID: ContextVar[str | None] = ContextVar("nexa_agent_model_id", default=None)
+_RUN_MODEL_DISPLAY: ContextVar[str | None] = ContextVar("nexa_agent_model_display", default=None)
 class Agent:
     """Runs an :class:`AgentTask` to completion (or a defined stop condition)."""
     def __init__(
@@ -63,9 +71,6 @@ class Agent:
         self.error_limit = error_limit
         # Optional. The agent calls ModelGateway.chat and never sees a provider SDK.
         self._model_gateway = model_gateway
-        self._model_provider: str | None = None
-        self._model_id: str | None = None
-        self._model_display: str | None = None
     async def run(
         self, task: AgentTask, cancel_event: asyncio.Event | None = None
     ) -> AgentResult:
@@ -76,9 +81,9 @@ class Agent:
         if not task.description or not task.description.strip():
             raise AgentTaskError("Agent task description must not be empty.")
         state = AgentState(task=task)
-        self._model_provider = None
-        self._model_id = None
-        self._model_display = None
+        model_provider_token = _RUN_MODEL_PROVIDER.set(None)
+        model_id_token = _RUN_MODEL_ID.set(None)
+        model_display_token = _RUN_MODEL_DISPLAY.set(None)
         # Compound multi-artifact tasks need more steps/time than single-tool demos.
         max_steps = self.max_steps
         timeout = self.timeout_seconds
@@ -107,20 +112,23 @@ class Agent:
             timeout,
             error_limit,
         )
-        # Temporarily apply compound budgets for this run only.
-        prev = (self.max_steps, self.timeout_seconds, self.error_limit)
-        self.max_steps, self.timeout_seconds, self.error_limit = max_steps, timeout, error_limit
+        # Budgets are local to this invocation. Agent is cached and may serve
+        # multiple concurrent requests; never mutate shared instance settings.
         try:
             if plan is not None and plan.is_compound:
                 project_status = "running"
             await asyncio.wait_for(
-                self._run_loop(state, cancel_event), timeout=self.timeout_seconds
+                self._run_loop(
+                    state,
+                    cancel_event,
+                    max_steps=max_steps,
+                    error_limit=error_limit,
+                ),
+                timeout=timeout,
             )
         except asyncio.TimeoutError:
             state.status = AgentStatus.TIMEOUT
             project_status = "failed"
-        finally:
-            self.max_steps, self.timeout_seconds, self.error_limit = prev
         elapsed_ms = (time.perf_counter() - start) * 1000
         final_answer = self._extract_final_answer(state)
         success = state.status == AgentStatus.COMPLETED
@@ -160,23 +168,32 @@ class Agent:
             steps=state.steps,
             elapsed_ms=round(elapsed_ms, 2),
             dry_run=task.dry_run,
-            provider=self._model_provider,
-            model=self._model_id,
-            display_name=self._model_display,
+            provider=_RUN_MODEL_PROVIDER.get(),
+            model=_RUN_MODEL_ID.get(),
+            display_name=_RUN_MODEL_DISPLAY.get(),
             project_status=project_status if plan and plan.is_compound else None,
             project_id=project_id,
             project_manifest=manifest_dict,
             partial_success=partial,
         )
-    async def _run_loop(self, state: AgentState, cancel_event: asyncio.Event | None) -> None:
+    async def _run_loop(
+        self,
+        state: AgentState,
+        cancel_event: asyncio.Event | None,
+        *,
+        max_steps: int | None = None,
+        error_limit: int | None = None,
+    ) -> None:
+        run_max_steps = self.max_steps if max_steps is None else max_steps
+        run_error_limit = self.error_limit if error_limit is None else error_limit
         while True:
             if cancel_event is not None and cancel_event.is_set():
                 state.status = AgentStatus.CANCELLED
                 return
-            if len(state.steps) >= self.max_steps:
+            if len(state.steps) >= run_max_steps:
                 state.status = AgentStatus.MAX_STEPS_EXCEEDED
                 return
-            if state.error_count >= self.error_limit:
+            if state.error_count >= run_error_limit:
                 state.status = AgentStatus.ERROR_LIMIT_EXCEEDED
                 return
             action = self._planner.plan_next(state)
@@ -251,8 +268,8 @@ class Agent:
                     duration_ms=(time.perf_counter() - step_started) * 1000,
                     attempt=attempt,
                     error=step.error,
-                    model=self._model_id,
-                    provider=self._model_provider,
+                    model=_RUN_MODEL_ID.get(),
+                    provider=_RUN_MODEL_PROVIDER.get(),
                     meta={
                         "verified": verified,
                         "dry_run": state.task.dry_run,
@@ -338,9 +355,9 @@ class Agent:
         except Exception:  # noqa: BLE001 - agent must still answer without Knowledge Core
             pass
         result = await self._model_gateway.chat(messages, task_kind=kind)
-        self._model_provider = result.provider
-        self._model_id = result.model_id
-        self._model_display = result.display_name
+        _RUN_MODEL_PROVIDER.set(result.provider)
+        _RUN_MODEL_ID.set(result.model_id)
+        _RUN_MODEL_DISPLAY.set(result.display_name)
         logger.info(
             "agent model answer provider=%s model=%s task=%s combined_context=%s",
             result.provider,
