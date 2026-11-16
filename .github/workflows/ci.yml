@@ -57,6 +57,7 @@ jobs:
             tests/test_model_router.py \
             tests/test_learning_memory.py \
             tests/test_memory_store.py \
+            tests/test_nexa_core_prompt.py \
             tests/test_video_intent.py \
             tests/test_plugins.py \
             tests/test_security_audit_regressions.py \
