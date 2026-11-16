@@ -160,7 +160,7 @@ class Agent:
             elapsed_ms,
             project_status,
         )
-        return AgentResult(
+        result = AgentResult(
             task_id=task.id,
             status=state.status,
             success=success,
@@ -176,6 +176,10 @@ class Agent:
             project_manifest=manifest_dict,
             partial_success=partial,
         )
+        _RUN_MODEL_PROVIDER.reset(model_provider_token)
+        _RUN_MODEL_ID.reset(model_id_token)
+        _RUN_MODEL_DISPLAY.reset(model_display_token)
+        return result
     async def _run_loop(
         self,
         state: AgentState,
