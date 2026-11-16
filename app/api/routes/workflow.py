@@ -71,6 +71,7 @@ async def run_workflow(
         description=request.task,
         metadata=request.metadata,
         attachment_ids=request.attachment_ids,
+        user_id=_user.id if _user is not None else None,
     )
     result = await orchestrator.run(task)
     return WorkflowResponse(**result.model_dump())
