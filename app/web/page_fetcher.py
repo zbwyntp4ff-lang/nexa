@@ -17,7 +17,7 @@ import httpx
 from app.models.errors import PageTooLargeError, WebFetchError, WebFetchTimeoutError
 from app.web.content_extractor import ContentExtractor
 from app.web.models import PageDocument
-from app.web.security import Resolver, validate_url
+from app.web.security import Resolver, pin_url_to_validated_address
 _REDIRECT_STATUS_CODES = frozenset({301, 302, 303, 307, 308})
 _DEFAULT_HEADERS = {
     "User-Agent": (
@@ -65,7 +65,14 @@ class PageFetcher:
         try:
             async with httpx.AsyncClient(**client_kwargs) as client:
                 for _ in range(self._max_redirects + 1):
-                    raw_bytes, headers = await self._get_body(client, current_url)
+                    request_url, original_host = (
+                        pin_url_to_validated_address(current_url, self._resolver)
+                        if self._resolver
+                        else pin_url_to_validated_address(current_url)
+                    )
+                    raw_bytes, headers = await self._get_body(
+                        client, current_url, request_url, original_host
+                    )
                     status_code, location = headers
                     if status_code in _REDIRECT_STATUS_CODES:
                         if not location:
@@ -89,12 +96,23 @@ class PageFetcher:
             text=extracted,
             content_hash=content_hash,
         )
-    def _validate(self, url: str) -> str:
-        return validate_url(url, self._resolver) if self._resolver else validate_url(url)
     async def _get_body(
-        self, client: httpx.AsyncClient, url: str
+        self,
+        client: httpx.AsyncClient,
+        url: str,
+        request_url: str,
+        original_host: str,
     ) -> tuple[bytes, tuple[int, str | None]]:
-        async with client.stream("GET", url) as response:
+        parsed = httpx.URL(url)
+        host_header = parsed.host
+        if parsed.port is not None:
+            host_header = f"{host_header}:{parsed.port}"
+        async with client.stream(
+            "GET",
+            request_url,
+            headers={"Host": host_header},
+            extensions={"sni_hostname": original_host},
+        ) as response:
             status_code = response.status_code
             location = response.headers.get("location")
             if status_code in _REDIRECT_STATUS_CODES:
