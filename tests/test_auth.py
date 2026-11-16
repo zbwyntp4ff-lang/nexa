@@ -486,3 +486,17 @@ def test_oauth_email_verified_string_false_is_not_trusted():
     assert _as_bool("0", default=True) is False
     assert _as_bool("true") is True
     assert _as_bool(True) is True
+
+
+def test_corrupt_auth_store_fails_closed(tmp_path: Path):
+    """A corrupt account database must not silently become an empty account list."""
+    store_path = tmp_path / "auth.json"
+    store_path.write_text('{"users": [', encoding="utf-8")
+    with pytest.raises(RuntimeError, match="Cannot load NEXA auth store"):
+        AuthStore(store_path)
+
+
+def test_missing_auth_store_starts_empty(tmp_path: Path):
+    """A genuinely new install still starts with an empty account database."""
+    store = AuthStore(tmp_path / "new-auth.json")
+    assert store.list_users() == []
