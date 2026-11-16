@@ -134,8 +134,8 @@ class PluginManager:
 
     def delete_user_data(self, user_id: str) -> int:
         """Disconnect and wipe all plugin connections for ``user_id``."""
-        for state in list(self._store.all(user_id=user_id)):
-            self._unregister_tool(state.plugin_id)
+        # User-scoped plugin tools are never registered globally, so deleting
+        # one user's connection must not unregister another user's capability.
         return self._store.delete_user(user_id)
 
     async def connect(
@@ -194,14 +194,16 @@ class PluginManager:
             logger.info("plugin connect failed id=%s status=%s", plugin_id, probe.status)
             return self.public_card(plugin_id, user_id=user_id)
         self._store.upsert(state)
-        self._register_tool(plugin_id)
+        if user_id is None:
+            self._register_tool(plugin_id)
         self._audit.record(plugin_id=plugin_id, action="connect", status="ok", detail=probe.detail)
         logger.info("plugin connected id=%s status=%s user=%s", plugin_id, probe.status, user_id or "-")
         return self.public_card(plugin_id, user_id=user_id)
 
     async def disconnect(self, plugin_id: str, *, user_id: str | None = None) -> dict[str, Any]:
         self.adapter(plugin_id)
-        self._unregister_tool(plugin_id)
+        if user_id is None:
+            self._unregister_tool(plugin_id)
         self._store.upsert(
             PluginState(
                 plugin_id=plugin_id,
@@ -298,7 +300,9 @@ class PluginManager:
         return result
 
     def restore_connected_tools(self) -> None:
-        for state in self._store.all():
+        # The shared agent registry has no per-request user context. Only
+        # explicitly system-scoped connections may be exposed as global tools.
+        for state in self._store.all(user_id=None):
             if state.enabled and state.plugin_id in self._adapters:
                 self._register_tool(state.plugin_id)
 
