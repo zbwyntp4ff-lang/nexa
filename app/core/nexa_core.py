@@ -185,7 +185,7 @@ class NexaCore:
         doc_ids = [r.id for r in records if r.kind == AttachmentKind.DOCUMENT]
         image_ids = [r.id for r in records if r.kind == AttachmentKind.IMAGE]
         if doc_ids:
-            context = self.attachments.document_context(doc_ids, query=request.message)
+            context = self.attachments.document_context(doc_ids, query=request.message, user_id=request.knowledge_user_id)
             if context:
                 messages = [
                     ChatMessage(
@@ -197,7 +197,7 @@ class NexaCore:
                     ),
                     *messages,
                 ]
-        images = self.attachments.image_payloads(image_ids) if image_ids else []
+        images = self.attachments.image_payloads(image_ids, user_id=request.knowledge_user_id) if image_ids else []
         return messages, images, [r.id for r in records]
     def _resolve_knowledge(self, request: ChatRequest) -> tuple[list[ChatMessage], RetrievalResult | None]:
         """Opt-in RAG step: retrieve, then prepend a labeled context message.
