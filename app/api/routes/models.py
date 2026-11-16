@@ -90,7 +90,7 @@ async def list_models(core: NexaCore = Depends(get_nexa_core)) -> ModelsResponse
         availability_reason=info.availability_reason,
         last_provider=info.last_provider,
         last_model=info.last_model,
-        last_display_name=info.display_name,
+        last_display_name=info.last_display_name,
         models=cards,
     )
 
