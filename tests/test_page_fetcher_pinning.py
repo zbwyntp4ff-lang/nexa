@@ -60,3 +60,32 @@ async def test_fetch_rejects_dns_rebinding_before_socket_connect():
     )
     with pytest.raises(SSRFProtectionError):
         await fetcher.fetch("https://rebind.example/")
+
+
+@pytest.mark.asyncio
+async def test_each_redirect_hop_is_resolved_and_pinned_independently():
+    seen = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.url.host, request.headers.get("host")))
+        if request.headers.get("host") == "first.example":
+            return httpx.Response(302, headers={"Location": "https://second.example/final"})
+        return httpx.Response(200, text="<html><title>Redirected</title><body>ok</body></html>")
+
+    def resolver(hostname: str, port: int | None = None):
+        mapping = {
+            "first.example": "93.184.216.34",
+            "second.example": "1.1.1.1",
+        }
+        return [_dns_result(mapping[hostname], port)]
+
+    fetcher = PageFetcher(
+        resolver=resolver,
+        transport=httpx.MockTransport(handler),
+    )
+    document = await fetcher.fetch("https://first.example/start")
+    assert seen == [
+        ("93.184.216.34", "first.example"),
+        ("1.1.1.1", "second.example"),
+    ]
+    assert document.url == "https://second.example/final"
