@@ -131,7 +131,7 @@ function applyContentSecurityPolicy() {
         ...details.responseHeaders,
         "Content-Security-Policy": [
           "default-src 'self'; " +
-            "img-src 'self' data: blob: http: https:; " +
+            "img-src 'self' data: blob:; " +
             `connect-src ${connectSrc}; ` +
             "style-src 'self' 'unsafe-inline'; " +
             "script-src 'self' 'unsafe-inline'; " +
@@ -406,7 +406,8 @@ function registerIpcHandlers() {
    */
   ipcMain.handle("nexa:open-path", async (event, payload) => {
     const filePath = payload && typeof payload.path === "string" ? payload.path : "";
-    const confirm = !!(payload && payload.confirm);
+    // Renderer-supplied flags are not trusted as authorization to bypass a native confirmation.
+    const confirm = false;
     if (!filePath || filePath.includes("\0")) {
       throw new Error("Rejected: invalid path.");
     }
