@@ -78,7 +78,7 @@ class PageFetcher:
                         if not location:
                             raise WebFetchError(f"Redirect from '{current_url}' had no Location header.")
                         next_url = urljoin(current_url, location)
-                        current_url = self._validate(next_url)
+                        current_url = next_url
                         continue
                     break
                 else:
