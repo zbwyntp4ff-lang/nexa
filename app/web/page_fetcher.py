@@ -54,7 +54,7 @@ class PageFetcher:
             app.models.errors.WebFetchTimeoutError
             app.models.errors.WebFetchError
         """
-        current_url = self._validate(url)
+        current_url = url
         client_kwargs = {
             "timeout": self._timeout_seconds,
             "follow_redirects": False,
@@ -104,7 +104,7 @@ class PageFetcher:
         original_host: str,
     ) -> tuple[bytes, tuple[int, str | None]]:
         parsed = httpx.URL(url)
-        host_header = parsed.host
+        host_header = f"[{parsed.host}]" if ":" in parsed.host else parsed.host
         if parsed.port is not None:
             host_header = f"{host_header}:{parsed.port}"
         async with client.stream(
