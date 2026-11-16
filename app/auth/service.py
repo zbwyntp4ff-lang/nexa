@@ -85,7 +85,7 @@ def _ipv4s_from_ipconfig() -> list[str]:
     import subprocess
 
     try:
-        raw = subprocess.check_output(["ipconfig"], text=True, encoding="oem", errors="replace")
+        raw = subprocess.check_output(["ipconfig"], text=True, encoding="utf-8", errors="replace")
     except (OSError, subprocess.CalledProcessError):
         return []
     found: list[str] = []
