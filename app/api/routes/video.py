@@ -42,8 +42,8 @@ async def detect_intent(body: IntentDetectRequest) -> dict:
 @router.post("/video/image-to-video", response_model=VideoJobStatus)
 async def start_image_to_video(
     body: ImageToVideoRequest,
-    user: _Auth = None,
     service: Annotated[ImageToVideoService, Depends(get_image_to_video_service)],
+    user: _Auth = None,
 ) -> VideoJobStatus:
     return await service.start_job(
         attachment_ids=body.attachment_ids,
