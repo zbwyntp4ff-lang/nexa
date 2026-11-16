@@ -52,6 +52,21 @@ class VideoJobStore:
                 return None
             return job.status
 
+    async def can_access_file(self, filename: str, *, user_id: str | None = None, enforce: bool = False) -> bool:
+        """Allow access only when a job owned by the caller references this file."""
+        from urllib.parse import urlparse
+        async with self._lock:
+            for job in self._jobs.values():
+                video_url = job.status.video_url or ""
+                if Path(urlparse(video_url).path).name != filename:
+                    continue
+                if enforce and (user_id is None or job.user_id != user_id):
+                    return False
+                if user_id is not None and job.user_id != user_id:
+                    return False
+                return True
+        return False
+
     async def attach_task(self, job_id: str, task: asyncio.Task) -> None:
         async with self._lock:
             if job_id in self._jobs:
