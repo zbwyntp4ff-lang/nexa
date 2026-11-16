@@ -85,7 +85,7 @@ class ImageToVideoService:
             raise ModelError("Message does not look like an image-to-video request.")
         if not attachment_ids:
             raise ModelError("Attach an image to animate.")
-        if not self._attachments.has_images(attachment_ids):
+        if not self._attachments.has_images(attachment_ids, user_id=user_id):
             raise ModelError("IMAGE_TO_VIDEO requires at least one image attachment.")
 
         if self._entitlements and user_id and self._settings.video_require_entitlement:
