@@ -66,9 +66,9 @@ class ApiRateLimitMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         if path == "/health" or not path.startswith("/api/"):
             return await call_next(request)
-        ip = request.client.host if request.client else "unknown"
-        forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-        key = forwarded or ip
+        # Only trust the ASGI client address. Forwarded headers are attacker-
+        # controlled unless a trusted proxy has already normalized request.client.
+        key = request.client.host if request.client else "unknown"
         if not _api_limiter.allow(key, max_calls=max_calls):
             return JSONResponse(
                 status_code=429,
