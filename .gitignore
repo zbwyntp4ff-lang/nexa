@@ -36,6 +36,9 @@ ollama_*.log
 # Runtime data (Memory / Auth / Billing / Agent workspace)
 /agent_workspace/
 /data/
+!/data/knowledge_core/
+!/data/knowledge_core/packs/
+!/data/knowledge_core/packs/*.json
 **/.nexa_runtime/
 
 # Frontend
