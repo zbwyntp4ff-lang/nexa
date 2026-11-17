@@ -12,7 +12,6 @@ from app.api.security_deps import require_user_when_enforced
 from app.auth.models import UserRecord
 from app.config.settings import Settings
 from app.models.agent_api import AgentRunResponse
-from app.models.errors import NexaError
 from app.orchestrator.agents import make_agent
 from app.orchestrator.catalog import get_agent, list_agents
 from app.tokens.guard import resolve_request_id, run_with_token_charge
