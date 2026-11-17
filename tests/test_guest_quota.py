@@ -57,3 +57,26 @@ def test_guest_quota_hashes_client_ip(tmp_path, monkeypatch):
     row = db.fetchone("SELECT client_key FROM guest_usage")
     assert row["client_key"] != "203.0.113.8"
     assert len(row["client_key"]) == 64
+
+
+def test_public_beta_allows_guest_chat_even_when_tokens_are_enforced(monkeypatch):
+    from app.api.routes import chat as chat_routes
+    from app.config.settings import Settings
+
+    consumed = []
+    monkeypatch.setattr(chat_routes, "consume_guest_request", lambda request: consumed.append(request))
+    request = _Request()
+    settings = Settings(_env_file=None, nexa_public_beta=True, tokens_enforce=True)
+    result = chat_routes.resolve_chat_user(request, None, None, settings)
+    assert result is None
+    assert consumed == [request]
+
+
+def test_guest_chat_stays_closed_when_public_beta_is_disabled():
+    from app.api.routes import chat as chat_routes
+    from app.auth.errors import UnauthorizedError
+    from app.config.settings import Settings
+
+    settings = Settings(_env_file=None, nexa_public_beta=False, tokens_enforce=True)
+    with pytest.raises(UnauthorizedError):
+        chat_routes.resolve_chat_user(_Request(), None, None, settings)
