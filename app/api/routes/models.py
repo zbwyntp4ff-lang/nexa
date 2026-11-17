@@ -3,9 +3,10 @@ Lists models, updates the in-memory selection, and checks availability.
 API keys are never included in any response.
 """
 from __future__ import annotations
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from app.api.deps import get_nexa_core
+from app.api.deps import get_nexa_core, get_settings
+from app.config.settings import Settings
 from app.core.nexa_core import NexaCore
 from app.gateway.models import ModelCard
 from app.models.errors import ProviderConfigurationError
@@ -58,15 +59,35 @@ async def list_models(core: NexaCore = Depends(get_nexa_core)) -> ModelsResponse
     )
 @router.put("/models/selection", response_model=ModelsResponse)
 async def update_selection(
-    body: SelectionUpdate, core: NexaCore = Depends(get_nexa_core)
+    body: SelectionUpdate,
+    core: NexaCore = Depends(get_nexa_core),
+    settings: Settings = Depends(get_settings),
 ) -> ModelsResponse:
+    if settings.nexa_public_beta:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "beta_feature_disabled",
+                "message": "Выбор модели временно отключён в публичной бета-версии.",
+            },
+        )
     gateway = _gateway(core)
     gateway.set_selection(body.provider, body.model, body.allow_fallback)
     return await list_models(core)
 @router.post("/models/check", response_model=ModelCard)
 async def check_model(
-    body: CheckRequest, core: NexaCore = Depends(get_nexa_core)
+    body: CheckRequest,
+    core: NexaCore = Depends(get_nexa_core),
+    settings: Settings = Depends(get_settings),
 ) -> ModelCard:
+    if settings.nexa_public_beta:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "beta_feature_disabled",
+                "message": "Проверка моделей временно отключена в публичной бета-версии.",
+            },
+        )
     gateway = _gateway(core)
     target = body.model
     if target.strip().lower() == "auto":
