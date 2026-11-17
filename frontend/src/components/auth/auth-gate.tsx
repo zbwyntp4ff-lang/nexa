@@ -18,7 +18,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const loadProfile = useProfileStore((s) => s.load);
   const [onboardingDismissed, setOnboardingDismissed] = React.useState(false);
 
+  const isPublicBeta = process.env.NEXT_PUBLIC_NEXA_PUBLIC_BETA === "true";
+
   React.useEffect(() => {
+    if (isPublicBeta) return;
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       // Legacy: older OAuth callbacks put session_token in the URL. Prefer cookie.
@@ -41,6 +44,8 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     if (status === "authenticated") void loadProfile();
   }, [status, loadProfile]);
+
+  if (isPublicBeta) return <>{children}</>;
 
   if (status === "loading") {
     return (
