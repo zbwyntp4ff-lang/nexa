@@ -64,6 +64,14 @@ def test_memory_delete_scoped(memory: MemoryManager):
     assert memory.get(a.id).content == "keep me"
 
 
+def test_memory_clear_is_scoped_to_one_user(memory: MemoryManager):
+    memory.save("Alice memory", type=MemoryType.LONG_TERM, user_id="alice")
+    memory.save("Bob memory", type=MemoryType.LONG_TERM, user_id="bob")
+    assert memory.clear(user_id="alice") == 1
+    assert memory.search(query="", user_id="alice") == []
+    assert any(item.item.content == "Bob memory" for item in memory.search(query="", user_id="bob"))
+
+
 def test_memory_rejects_secrets(memory: MemoryManager):
     with pytest.raises(SecretInMemoryError):
         memory.save("sk-abcdefghijklmnopqrstuvwxyz012345", type=MemoryType.LONG_TERM, user_id="u1")
