@@ -1,14 +1,11 @@
 /** Shared frontend types for NEXA AI. */
 export type AppMode = "chat" | "agent" | "code" | "research" | "create" | "vision";
 /** Modes with a real, connected backend in this build. Others render "Coming Soon". */
-export const AVAILABLE_MODES: ReadonlySet<AppMode> = new Set([
-  "chat",
-  "agent",
-  "code",
-  "research",
-  "create",
-  "vision",
-]);
+export const AVAILABLE_MODES: ReadonlySet<AppMode> = new Set(
+  process.env.NEXT_PUBLIC_NEXA_PUBLIC_BETA === "true"
+    ? ["chat"]
+    : ["chat", "agent", "code", "research", "create", "vision"],
+);
 export interface ModeDefinition {
   id: AppMode;
   label: string;
