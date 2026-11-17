@@ -32,6 +32,7 @@ interface ComposerProps {
 }
 export function Composer({ mode = "chat", onSend, onStop, isSending, disabled, placeholder }: ComposerProps) {
   const t = useT();
+  const isPublicBeta = process.env.NEXT_PUBLIC_NEXA_PUBLIC_BETA === "true";
   const visionEnabled = usePluginsStore((s) => s.enabled.vision);
   const [value, setValue] = React.useState("");
   const [attachments, setAttachments] = React.useState<AttachmentView[]>([]);
@@ -58,6 +59,7 @@ export function Composer({ mode = "chat", onSend, onStop, isSending, disabled, p
     setAttachments((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
   }
   async function addFiles(files: FileList | File[]) {
+    if (isPublicBeta) return;
     const list = Array.from(files);
     if (list.length === 0) return;
     const availableSlots = DEFAULT_MAX_ATTACHMENTS_PER_MESSAGE - attachments.length;
@@ -127,7 +129,7 @@ export function Composer({ mode = "chat", onSend, onStop, isSending, disabled, p
       onDragLeave={() => { dragCounter.current -= 1; if (dragCounter.current <= 0) setIsDragging(false); }}
       onDrop={(e) => {
         e.preventDefault(); dragCounter.current = 0; setIsDragging(false);
-        if (e.dataTransfer.files?.length) void addFiles(e.dataTransfer.files);
+        if (!isPublicBeta && e.dataTransfer.files?.length) void addFiles(e.dataTransfer.files);
       }}
     >
       <div className={cn("nexa-glass mx-auto flex max-w-3xl flex-col gap-2 rounded-3xl p-2.5 transition-colors", isDragging && "border-primary border-dashed")}>
@@ -193,7 +195,7 @@ export function Composer({ mode = "chat", onSend, onStop, isSending, disabled, p
           className="max-h-[200px] min-h-10 resize-none border-none bg-transparent px-2 shadow-none focus-visible:ring-0 dark:bg-transparent"
         />
         <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-1">
+          <div className={cn("flex items-center gap-1", isPublicBeta && "hidden")}>
             <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(e) => { if (e.target.files) void addFiles(e.target.files); e.target.value = ""; }} />
             <input ref={imageInputRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => { if (e.target.files) void addFiles(e.target.files); e.target.value = ""; }} />
             <Tooltip>
@@ -223,7 +225,7 @@ export function Composer({ mode = "chat", onSend, onStop, isSending, disabled, p
             </Tooltip>
           </div>
           <div className="flex items-center gap-1">
-            <ModelQuickSwitch />
+            {!isPublicBeta && <ModelQuickSwitch />}
             {isSending ? (
               <Button type="button" size="icon" variant="secondary" aria-label={t("chat.stopGenerating")} onClick={onStop}>
                 <Square className="size-4" aria-hidden="true" />
