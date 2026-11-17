@@ -53,6 +53,13 @@ export function PersonalizationSection() {
   const [preferredName, setPreferredName] = React.useState("");
   const [aiLanguage, setAiLanguage] = React.useState("");
   const [defaultModel, setDefaultModel] = React.useState("");
+  const [aboutUser, setAboutUser] = React.useState("");
+  const [occupation, setOccupation] = React.useState("");
+  const [interests, setInterests] = React.useState("");
+  const [customInstructions, setCustomInstructions] = React.useState("");
+  const [avoidTopics, setAvoidTopics] = React.useState("");
+  const [expertiseLevel, setExpertiseLevel] = React.useState<"beginner" | "intermediate" | "advanced" | "expert">("intermediate");
+  const [proactiveSuggestions, setProactiveSuggestions] = React.useState(true);
   const [hint, setHint] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
 
@@ -66,6 +73,13 @@ export function PersonalizationSection() {
     setPreferredName(profile.ai.preferred_name);
     setAiLanguage(profile.ai.ai_language);
     setDefaultModel(profile.ai.default_model ?? "");
+    setAboutUser(profile.ai.about_user ?? "");
+    setOccupation(profile.ai.occupation ?? "");
+    setInterests((profile.ai.interests ?? []).join(", "));
+    setCustomInstructions(profile.ai.custom_instructions ?? "");
+    setAvoidTopics(profile.ai.avoid_topics ?? "");
+    setExpertiseLevel(profile.ai.expertise_level ?? "intermediate");
+    setProactiveSuggestions(profile.ai.proactive_suggestions ?? true);
   }, [profile]);
 
   async function persistProfile() {
@@ -84,10 +98,24 @@ export function PersonalizationSection() {
             ai_language: "",
             default_model: null,
             preferred_name: "",
+            custom_instructions: "",
+            about_user: "",
+            occupation: "",
+            interests: [],
+            avoid_topics: "",
+            expertise_level: "intermediate",
+            proactive_suggestions: true,
           }),
           preferred_name: preferredName,
           ai_language: aiLanguage,
           default_model: defaultModel.trim() || null,
+          about_user: aboutUser,
+          occupation,
+          interests: interests.split(",").map((item) => item.trim()).filter(Boolean).slice(0, 12),
+          custom_instructions: customInstructions,
+          avoid_topics: avoidTopics,
+          expertise_level: expertiseLevel,
+          proactive_suggestions: proactiveSuggestions,
         },
       });
       const preview = await fetchContextPreview();
