@@ -124,9 +124,15 @@ export function Composer({ mode = "chat", onSend, onStop, isSending, disabled, p
   return (
     <div
       className={cn("border-t border-border/40 bg-transparent p-3 sm:p-4", isDragging && "bg-accent/20")}
-      onDragEnter={(e) => { e.preventDefault(); dragCounter.current += 1; setIsDragging(true); }}
-      onDragOver={(e) => e.preventDefault()}
-      onDragLeave={() => { dragCounter.current -= 1; if (dragCounter.current <= 0) setIsDragging(false); }}
+      onDragEnter={(e) => {
+        if (isPublicBeta) return;
+        e.preventDefault(); dragCounter.current += 1; setIsDragging(true);
+      }}
+      onDragOver={(e) => { if (!isPublicBeta) e.preventDefault(); }}
+      onDragLeave={() => {
+        if (isPublicBeta) return;
+        dragCounter.current -= 1; if (dragCounter.current <= 0) setIsDragging(false);
+      }}
       onDrop={(e) => {
         e.preventDefault(); dragCounter.current = 0; setIsDragging(false);
         if (!isPublicBeta && e.dataTransfer.files?.length) void addFiles(e.dataTransfer.files);
