@@ -26,6 +26,13 @@ class AIPreferences(BaseModel):
     ai_language: str = ""  # empty = follow user message language
     default_model: str | None = None
     preferred_name: str = ""
+    custom_instructions: str = Field(default="", max_length=1500)
+    about_user: str = Field(default="", max_length=600)
+    occupation: str = Field(default="", max_length=120)
+    interests: list[str] = Field(default_factory=list, max_length=12)
+    avoid_topics: str = Field(default="", max_length=400)
+    expertise_level: Literal["beginner", "intermediate", "advanced", "expert"] = "intermediate"
+    proactive_suggestions: bool = True
 
 
 class UserProfile(BaseModel):
