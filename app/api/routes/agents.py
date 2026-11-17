@@ -28,7 +28,7 @@ class SpecialistRunRequest(BaseModel):
 
 
 @router.get("/catalog")
-async def get_agent_catalog(
+def get_agent_catalog(
     category: str | None = Query(default=None, max_length=40),
     q: str = Query(default="", max_length=100),
 ) -> dict:
