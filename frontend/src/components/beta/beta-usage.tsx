@@ -33,7 +33,7 @@ export function BetaUsage() {
       <span className="text-right">
         Без регистрации
         {usage
-          ? ` · Сегодня осталось ${usage.daily_remaining} из ${usage.daily_limit}`
+          ? ` · Сегодня ${usage.daily_remaining}/${usage.daily_limit} · За час ${usage.hourly_remaining}/${usage.hourly_limit}`
           : " · Бесплатный тестовый доступ"}
       </span>
     </div>
