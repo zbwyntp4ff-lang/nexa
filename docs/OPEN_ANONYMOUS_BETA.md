@@ -11,7 +11,7 @@ the browser.
 - The backend accepts unauthenticated requests to the existing chat endpoints
   only when `NEXA_PUBLIC_BETA=true` is enabled.
 - Anonymous requests are charged against a persistent IP-based allowance:
-  **5 requests per rolling hour and 15 requests per UTC day**.
+  **5 requests per one-hour window and 15 requests per UTC day**.
 - Quota counters are stored in the shared SQL database in `guest_usage`.
   Clearing browser storage does not reset the counter.
 - The browser displays the remaining daily allowance. The API returns HTTP
