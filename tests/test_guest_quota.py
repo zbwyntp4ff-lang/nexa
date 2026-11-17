@@ -123,3 +123,17 @@ def test_public_beta_forces_default_text_chat(monkeypatch):
     assert limited.attachment_ids == []
     assert limited.use_knowledge_base is False
     assert limited.knowledge_project_id is None
+
+
+def test_public_beta_rejects_oversized_message(monkeypatch):
+    from app.api.routes.chat import _apply_public_beta_restrictions
+    from app.config.settings import Settings
+    from app.models.chat import ChatRequest
+
+    monkeypatch.setenv("NEXA_PUBLIC_BETA", "true")
+    settings = Settings(_env_file=None)
+    request = ChatRequest(message="x" * 3001)
+    with pytest.raises(HTTPException) as exc:
+        _apply_public_beta_restrictions(request, None, settings)
+    assert exc.value.status_code == 413
+    assert exc.value.detail["error"] == "beta_message_too_long"
