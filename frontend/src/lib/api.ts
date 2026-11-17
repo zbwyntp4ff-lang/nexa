@@ -186,6 +186,12 @@ export async function streamChat(
       messageText = detail.message ?? body.message ?? messageText;
       const retry = Number(detail.retry_after_seconds ?? response.headers.get("Retry-After"));
       if (Number.isFinite(retry) && retry > 0) retryAfterSeconds = retry;
+      if (code === "beta_limit_reached" && retryAfterSeconds) {
+        const hours = Math.floor(retryAfterSeconds / 3600);
+        const minutes = Math.max(1, Math.ceil((retryAfterSeconds % 3600) / 60));
+        const wait = hours > 0 ? `${hours} ч ${minutes} мин` : `${minutes} мин`;
+        messageText = `Бесплатный лимит исчерпан. Новые запросы будут доступны через ${wait}.`;
+      }
     } catch {
       // body was not JSON
     }
