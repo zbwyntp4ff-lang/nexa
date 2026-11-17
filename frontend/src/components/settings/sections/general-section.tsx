@@ -2,6 +2,7 @@
 import * as React from "react";
 import { Trash2, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,6 +15,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useChatStore } from "@/store/chat-store";
+import { useUiStore } from "@/store/ui-store";
 import { useI18nStore, type Language } from "@/lib/i18n-store";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -29,6 +31,8 @@ export function GeneralSection() {
   const clearAllChats = useChatStore((s) => s.clearAllChats);
   const language = useI18nStore((s) => s.language);
   const setLanguage = useI18nStore((s) => s.setLanguage);
+  const enterToSend = useUiStore((s) => s.enterToSend);
+  const setEnterToSend = useUiStore((s) => s.setEnterToSend);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
 
   return (
@@ -67,6 +71,13 @@ export function GeneralSection() {
             </button>
           ))}
         </div>
+      </div>
+      <div className="flex items-center justify-between gap-4 rounded-lg border border-border p-3">
+        <div>
+          <p className="text-sm font-medium">{t("general.enterToSend")}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{t("general.enterToSendDesc")}</p>
+        </div>
+        <Switch checked={enterToSend} onCheckedChange={setEnterToSend} aria-label={t("general.enterToSend")} />
       </div>
       <div className="space-y-2">
         <h3 className="text-sm font-medium">{t("general.data")}</h3>
