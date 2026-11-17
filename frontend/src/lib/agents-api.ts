@@ -26,3 +26,19 @@ export function fetchAgentCatalog(q = "", category = "", signal?: AbortSignal) {
   const suffix = encoded ? `?${encoded}` : "";
   return request<AgentCatalogResponse>(`/api/v1/agents/catalog${suffix}`, { signal });
 }
+
+export interface SpecialistAgentResult {
+  success: boolean;
+  final_answer: string | null;
+  status: string;
+  model: string | null;
+  elapsed_ms: number;
+}
+
+export function runSpecialistAgent(agentId: string, task: string, signal?: AbortSignal) {
+  return request<SpecialistAgentResult>(`/api/v1/agents/${encodeURIComponent(agentId)}/run`, {
+    method: "POST",
+    body: JSON.stringify({ task }),
+    signal,
+  });
+}
