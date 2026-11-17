@@ -16,7 +16,8 @@ export type SettingsSection =
   | "billing"
   | "tokens"
   | "personalization"
-  | "about";
+  | "about"
+  | "agents";
 interface UiStoreState {
   activeView: AppView;
   setActiveView: (view: AppView) => void;
