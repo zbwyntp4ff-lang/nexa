@@ -30,7 +30,8 @@ jobs:
             tests/test_phase6_beta.py \
             tests/test_security_phase6_final.py \
             tests/test_beta_release_gate.py \
-            tests/test_open_beta_readiness.py \
+            tests/test_open_beta_readiness.py \\
+            tests/test_guest_quota.py \
             tests/test_desktop_phase4.py \
             tests/test_compound_projects.py \
             tests/test_office_tools.py \
