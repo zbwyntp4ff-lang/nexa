@@ -22,9 +22,10 @@ export function AppShell() {
   useBackendHealth();
   const activeView = useUiStore((s) => s.activeView);
   const openSettings = useUiStore((s) => s.openSettings);
-  const isOmni = activeView === "omniverse";
-  const isHexa = activeView === "hexa";
-  const isChat = activeView === "chat";
+  const isPublicBeta = process.env.NEXT_PUBLIC_NEXA_PUBLIC_BETA === "true";
+  const isOmni = !isPublicBeta && activeView === "omniverse";
+  const isHexa = !isPublicBeta && activeView === "hexa";
+  const isChat = isPublicBeta || activeView === "chat";
 
   React.useEffect(() => {
     if (typeof window === "undefined") return;
