@@ -75,7 +75,7 @@ def test_public_beta_allows_guest_chat_even_when_tokens_are_enforced(monkeypatch
     assert consumed == [request]
 
 
-def test_guest_chat_stays_closed_when_public_beta_is_disabled():
+def test_guest_chat_stays_closed_when_public_beta_is_disabled(monkeypatch):
     from app.api.routes import chat as chat_routes
     from app.auth.errors import UnauthorizedError
     from app.config.settings import Settings
