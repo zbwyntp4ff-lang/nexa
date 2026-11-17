@@ -49,7 +49,9 @@ NEXT_PUBLIC_API_BASE_URL=
 ```
 
 Build the frontend again after changing `NEXT_PUBLIC_NEXA_PUBLIC_BETA`; Next.js
-bakes public environment variables into the browser bundle.
+bakes public environment variables into the browser bundle. For the repository
+Dockerfile, pass `--build-arg NEXT_PUBLIC_NEXA_PUBLIC_BETA=true` when building
+the beta image.
 
 ## Operational notes
 
