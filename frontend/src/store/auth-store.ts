@@ -14,7 +14,6 @@ import {
   forgotPassword,
   verifyEmail,
 } from "@/lib/auth-api";
-import { clearSessionToken, setSessionToken } from "@/lib/session-token";
 import { useChatStore } from "@/store/chat-store";
 
 function bindChatUser(userId: string | null) {
@@ -72,7 +71,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         bindChatUser(user.id);
         set({ status: "authenticated", user, authStatus, screen: "login" });
       } catch {
-        clearSessionToken();
         bindChatUser(null);
         set({
           status: "anonymous",
@@ -90,7 +88,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setupOwner: async (payload) => {
     const result = await registerAccount(payload);
     if (result.ready) {
-      setSessionToken(result.session_token);
       let authStatus = get().authStatus;
       try {
         authStatus = await fetchAuthStatus();
@@ -139,7 +136,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   login: async (email, password) => {
     try {
       const result = await loginAccount(email, password);
-      setSessionToken(result.session_token);
       bindChatUser(result.user.id);
       set({ status: "authenticated", user: result.user, screen: "login" });
     } catch (err) {
@@ -155,7 +151,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       await logoutAccount();
     } finally {
-      clearSessionToken();
       bindChatUser(null);
       const authStatus = get().authStatus;
       set({
@@ -169,7 +164,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   deleteMyAccount: async () => {
     const userId = get().user?.id;
     await deleteAccount();
-    clearSessionToken();
     if (userId) {
       try {
         const chat = useChatStore.getState();

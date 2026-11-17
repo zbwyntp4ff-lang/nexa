@@ -115,15 +115,15 @@ def multi_user(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
             },
         )
         assert r.status_code in (200, 201), r.text
-        body = r.json()
-        token = body.get("session_token")
+        token = r.cookies.get("nexa_session")
         if not token:
             login = client.post(
                 "/api/v1/auth/login",
                 json={"email": email, "password": "Secret123"},
             )
             assert login.status_code == 200, login.text
-            token = login.json()["session_token"]
+            token = login.cookies.get("nexa_session")
+        assert token
         return token
 
     token_a = register("alice@nexa.test", "alice_iso")

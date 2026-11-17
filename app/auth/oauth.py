@@ -50,6 +50,21 @@ def _configured(client_id: str | None, client_secret: str | None) -> bool:
     return bool((client_id or "").strip() and (client_secret or "").strip())
 
 
+def _as_bool(value: Any, *, default: bool = False) -> bool:
+    """Parse provider booleans without treating the string "false" as true."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes"}:
+            return True
+        if normalized in {"false", "0", "no", ""}:
+            return False
+    if value is None:
+        return default
+    return bool(value)
+
+
 def provider_configs(settings: Any) -> dict[ProviderId, ProviderConfig]:
     out: dict[ProviderId, ProviderConfig] = {}
     google = load_google_oauth(settings)
@@ -82,7 +97,7 @@ def provider_configs(settings: Any) -> dict[ProviderId, ProviderConfig]:
             authorize_url="https://appleid.apple.com/auth/authorize",
             token_url="https://appleid.apple.com/auth/token",
             scopes="name email",
-            extra_auth_params={"response_mode": "query"},
+            extra_auth_params={"response_mode": "form_post"},
         )
     return out
 
@@ -136,6 +151,7 @@ async def exchange_code(
     *,
     code: str,
     redirect_uri: str,
+    apple_user: dict[str, Any] | None = None,
 ) -> OAuthProfile:
     cfg = provider_configs(settings).get(provider)
     if not cfg:
@@ -149,7 +165,7 @@ async def exchange_code(
         if provider == "github":
             return await _github_profile(client, cfg, code=code, redirect_uri=redirect_uri)
         if provider == "apple":
-            return await _apple_profile(client, cfg, code=code, redirect_uri=redirect_uri)
+            return await _apple_profile(client, cfg, code=code, redirect_uri=redirect_uri, apple_user=apple_user)
     raise ValidationAuthError("Unknown OAuth provider.")
 
 
@@ -212,7 +228,7 @@ async def _google_profile(
         provider="google",
         subject=sub,
         email=email,
-        email_verified=bool(data.get("email_verified", True)),
+        email_verified=_as_bool(data.get("email_verified"), default=True),
         first_name=given[:64],
         last_name=family[:64],
         username_hint=_slug(local),
@@ -284,22 +300,36 @@ async def _apple_profile(
     *,
     code: str,
     redirect_uri: str,
+    apple_user: dict[str, Any] | None = None,
 ) -> OAuthProfile:
     token = await _token_post(client, cfg, code=code, redirect_uri=redirect_uri)
     id_token = str(token.get("id_token") or "")
     if not id_token:
         raise OAuthExchangeError("Apple did not return an id_token.")
-    # Decode payload without signature verify of JWKS here — Apple client secret
-    # already gates the token endpoint. Payload is still base64url JSON.
+    # Verify Apple's signature and standard claims before trusting the identity.
     try:
-        payload_b64 = id_token.split(".")[1]
-        pad = "=" * (-len(payload_b64) % 4)
-        import base64
-        import json
+        import jwt
+        from jwt.algorithms import RSAAlgorithm
 
-        payload = json.loads(base64.urlsafe_b64decode(payload_b64 + pad))
-    except (IndexError, ValueError, json.JSONDecodeError) as exc:
-        raise OAuthExchangeError("Invalid Apple id_token.") from exc
+        keys_response = await client.get("https://appleid.apple.com/auth/keys")
+        keys_response.raise_for_status()
+        jwks = keys_response.json()
+        header = jwt.get_unverified_header(id_token)
+        key_data = next(
+            key for key in jwks.get("keys", [])
+            if key.get("kid") == header.get("kid") and key.get("kty") == "RSA"
+        )
+        signing_key = RSAAlgorithm.from_jwk(key_data)
+        payload = jwt.decode(
+            id_token,
+            signing_key,
+            algorithms=["RS256"],
+            audience=cfg.client_id,
+            issuer="https://appleid.apple.com",
+            options={"require": ["exp", "iat", "sub", "iss", "aud"]},
+        )
+    except Exception as exc:
+        raise OAuthExchangeError("Apple identity token verification failed.") from exc
     sub = str(payload.get("sub") or "").strip()
     email = str(payload.get("email") or "").strip().lower()
     if not sub:
@@ -307,13 +337,16 @@ async def _apple_profile(
     if not email:
         email = f"{sub[:16]}@privaterelay.appleid.com"
     local = email.split("@", 1)[0]
+    name_data = apple_user.get("name", {}) if isinstance(apple_user, dict) else {}
+    first_name = str(name_data.get("firstName") or "Apple").strip()[:64] or "Apple"
+    last_name = str(name_data.get("lastName") or "User").strip()[:64] or "User"
     return OAuthProfile(
         provider="apple",
         subject=sub,
         email=email,
-        email_verified=bool(payload.get("email_verified", True)),
-        first_name="Apple",
-        last_name="User",
+        email_verified=_as_bool(payload.get("email_verified"), default=True),
+        first_name=first_name,
+        last_name=last_name,
         username_hint=_slug(local),
     )
 

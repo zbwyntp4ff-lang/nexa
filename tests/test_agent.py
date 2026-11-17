@@ -167,6 +167,38 @@ async def test_agent_counts_verification_failure_as_an_error(tmp_path):
     assert result.status == AgentStatus.ERROR_LIMIT_EXCEEDED
     assert all(not s.success for s in result.steps)
 # --- MAX_STEPS -----------------------------------------------------------------
+async def test_concurrent_agent_loops_keep_per_run_budgets_isolated(tmp_path):
+    class _InfinitePlanner(Planner):
+        def plan_next(self, state: AgentState) -> PlannedAction:
+            return PlannedAction(
+                type=PlannedActionType.TOOL_CALL,
+                tool_name="current_time",
+                tool_input={},
+            )
+
+    agent = _build_agent(
+        tmp_path,
+        planner=_InfinitePlanner(),
+        max_steps=9,
+        error_limit=100,
+    )
+    short_run = AgentState(task=AgentTask(description="short run"))
+    long_run = AgentState(task=AgentTask(description="long run"))
+
+    await asyncio.gather(
+        agent._run_loop(short_run, None, max_steps=1, error_limit=100),
+        agent._run_loop(long_run, None, max_steps=3, error_limit=100),
+    )
+
+    assert short_run.status == AgentStatus.MAX_STEPS_EXCEEDED
+    assert len(short_run.steps) == 1
+    assert long_run.status == AgentStatus.MAX_STEPS_EXCEEDED
+    assert len(long_run.steps) == 3
+    # Per-run limits must never mutate the cached Agent's defaults.
+    assert agent.max_steps == 9
+    assert agent.error_limit == 100
+
+
 async def test_agent_stops_at_max_steps_to_prevent_infinite_loops(tmp_path):
     class _InfinitePlanner(Planner):
         """Always asks for the current time again - never reports success as

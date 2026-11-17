@@ -189,3 +189,43 @@ def test_api_plugins_require_auth(tmp_path: Path):
     conn = client.post("/api/v1/plugins/vscode/connect", json={"permissions": ["files.read"]})
     assert conn.status_code == 401
     get_plugin_manager.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_user_plugin_connections_are_not_registered_globally_or_shared(mgr: PluginManager):
+    alice = await mgr.connect(
+        "vscode", user_id="alice", permissions=["files.read", "files.write"]
+    )
+    assert alice["enabled"] is True
+    assert "plugin_vscode" not in {tool.name for tool in mgr._registry.list()}
+    mgr.restore_connected_tools()
+    assert "plugin_vscode" not in {tool.name for tool in mgr._registry.list()}
+
+    bob = await mgr.connect(
+        "vscode", user_id="bob", permissions=["files.read", "files.write"]
+    )
+    assert bob["enabled"] is True
+
+    alice_ctx = mgr._context(mgr.adapter("vscode"), mgr._store.get("vscode", user_id="alice"))
+    bob_ctx = mgr._context(mgr.adapter("vscode"), mgr._store.get("vscode", user_id="bob"))
+    assert alice_ctx.workspace_root != bob_ctx.workspace_root
+
+    await mgr.disconnect("vscode", user_id="alice")
+    assert mgr._store.get("vscode", user_id="bob").enabled is True
+    assert "plugin_vscode" not in {tool.name for tool in mgr._registry.list()}
+
+
+def test_plugin_audit_and_workspace_deletion_are_user_scoped(mgr: PluginManager, tmp_path: Path):
+    import hashlib
+
+    mgr._audit.record(plugin_id="vscode", action="read", status="ok", user_id="alice")
+    mgr._audit.record(plugin_id="vscode", action="read", status="ok", user_id="bob")
+    alice_events = mgr.audit("vscode", user_id="alice")
+    assert len(alice_events) == 1
+    assert alice_events[0]["user_id"] == "alice"
+
+    alice_root = mgr._workspace_root / hashlib.sha256(b"alice").hexdigest()
+    alice_root.mkdir(parents=True)
+    (alice_root / "private.txt").write_text("alice data", encoding="utf-8")
+    assert mgr.delete_user_data("alice") == 0
+    assert not alice_root.exists()

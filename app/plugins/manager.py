@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import shutil
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -129,14 +131,23 @@ class PluginManager:
     ) -> list[dict[str, Any]]:
         items = self._audit.for_plugin(plugin_id, limit) if plugin_id else self._audit.all(limit)
         if user_id is not None:
-            items = [e for e in items if getattr(e, "user_id", None) in (None, user_id)]
+            items = [e for e in items if e.user_id == user_id]
         return [e.model_dump() for e in items]
 
     def delete_user_data(self, user_id: str) -> int:
         """Disconnect and wipe all plugin connections for ``user_id``."""
-        for state in list(self._store.all(user_id=user_id)):
-            self._unregister_tool(state.plugin_id)
-        return self._store.delete_user(user_id)
+        # User-scoped plugin tools are never registered globally, so deleting
+        # one user's connection must not unregister another user's capability.
+        removed = self._store.delete_user(user_id)
+        candidate = self._workspace_root / hashlib.sha256(user_id.encode("utf-8")).hexdigest()
+        if candidate.is_symlink():
+            candidate.unlink()
+        elif candidate.exists():
+            root = self._workspace_root.resolve()
+            resolved = candidate.resolve()
+            if resolved != root and root in resolved.parents:
+                shutil.rmtree(resolved)
+        return removed
 
     async def connect(
         self,
@@ -188,20 +199,23 @@ class PluginManager:
         if not connected:
             # Do not persist secrets if probe failed
             state.secrets = {}
-            self._unregister_tool(plugin_id)
+            if user_id is None:
+                self._unregister_tool(plugin_id)
             self._store.upsert(state)
-            self._audit.record(plugin_id=plugin_id, action="connect", status="failed", detail=probe.detail)
+            self._audit.record(plugin_id=plugin_id, action="connect", status="failed", user_id=user_id, detail=probe.detail)
             logger.info("plugin connect failed id=%s status=%s", plugin_id, probe.status)
             return self.public_card(plugin_id, user_id=user_id)
         self._store.upsert(state)
-        self._register_tool(plugin_id)
-        self._audit.record(plugin_id=plugin_id, action="connect", status="ok", detail=probe.detail)
+        if user_id is None:
+            self._register_tool(plugin_id)
+        self._audit.record(plugin_id=plugin_id, action="connect", status="ok", user_id=user_id, detail=probe.detail)
         logger.info("plugin connected id=%s status=%s user=%s", plugin_id, probe.status, user_id or "-")
         return self.public_card(plugin_id, user_id=user_id)
 
     async def disconnect(self, plugin_id: str, *, user_id: str | None = None) -> dict[str, Any]:
         self.adapter(plugin_id)
-        self._unregister_tool(plugin_id)
+        if user_id is None:
+            self._unregister_tool(plugin_id)
         self._store.upsert(
             PluginState(
                 plugin_id=plugin_id,
@@ -210,7 +224,7 @@ class PluginManager:
                 status="disconnected",
             )
         )
-        self._audit.record(plugin_id=plugin_id, action="disconnect", status="ok")
+        self._audit.record(plugin_id=plugin_id, action="disconnect", status="ok", user_id=user_id)
         logger.info("plugin disconnected id=%s user=%s", plugin_id, user_id or "-")
         return self.public_card(plugin_id, user_id=user_id)
 
@@ -227,11 +241,12 @@ class PluginManager:
             state.enabled = False
             state.status = probe.status
             state.connected_at = None
-            self._unregister_tool(plugin_id)
+            if user_id is None:
+                self._unregister_tool(plugin_id)
         elif state.enabled:
             state.status = probe.status
         self._store.upsert(state)
-        self._audit.record(plugin_id=plugin_id, action="diagnose", status="ok" if probe.ok else "failed", detail=probe.detail)
+        self._audit.record(plugin_id=plugin_id, action="diagnose", status="ok" if probe.ok else "failed", user_id=user_id, detail=probe.detail)
         return probe
 
     async def set_permissions(
@@ -247,7 +262,7 @@ class PluginManager:
             raise PluginValidationError(f"Unknown permissions: {', '.join(unknown)}")
         state.granted_permissions = [p for p in permissions if p in allowed]
         self._store.upsert(state)
-        self._audit.record(plugin_id=plugin_id, action="permissions", status="ok", detail=",".join(state.granted_permissions))
+        self._audit.record(plugin_id=plugin_id, action="permissions", status="ok", user_id=user_id, detail=",".join(state.granted_permissions))
         return self.public_card(plugin_id, user_id=user_id)
 
     async def invoke(
@@ -282,24 +297,26 @@ class PluginManager:
         except PluginConfirmationRequiredError:
             raise
         except TimeoutError as exc:
-            self._audit.record(plugin_id=plugin_id, action=action, status="timeout")
+            self._audit.record(plugin_id=plugin_id, action=action, status="timeout", user_id=user_id)
             raise PluginTimeoutError(f"Plugin '{plugin_id}' action '{action}' timed out") from exc
         except PathTraversalError:
-            self._audit.record(plugin_id=plugin_id, action=action, status="denied", detail="path traversal")
+            self._audit.record(plugin_id=plugin_id, action=action, status="denied", user_id=user_id, detail="path traversal")
             raise
         except Exception as exc:  # noqa: BLE001
             msg = redact_secrets(str(exc))
             logger.warning("plugin invoke failed id=%s action=%s err=%s", plugin_id, action, msg)
-            self._audit.record(plugin_id=plugin_id, action=action, status="error", detail=msg)
+            self._audit.record(plugin_id=plugin_id, action=action, status="error", user_id=user_id, detail=msg)
             raise
         status = "ok" if result.success else "error"
-        self._audit.record(plugin_id=plugin_id, action=action, status=status, detail=result.error or "")
+        self._audit.record(plugin_id=plugin_id, action=action, status=status, user_id=user_id, detail=result.error or "")
         logger.info("plugin invoke id=%s action=%s success=%s", plugin_id, action, result.success)
         return result
 
     def restore_connected_tools(self) -> None:
+        # The shared agent registry has no per-request user context. Only
+        # explicitly system-scoped connections may be exposed as global tools.
         for state in self._store.all():
-            if state.enabled and state.plugin_id in self._adapters:
+            if state.user_id is None and state.enabled and state.plugin_id in self._adapters:
                 self._register_tool(state.plugin_id)
 
     def _context(self, adapter: PluginAdapter, state: PluginState, confirm: bool = False) -> PluginContext:
@@ -310,7 +327,12 @@ class PluginManager:
             except ValueError:
                 logger.warning("plugin secret decrypt failed id=%s key=%s", state.plugin_id, key)
         return PluginContext(
-            workspace_root=self._workspace_root,
+            # Each account receives a distinct filesystem namespace. Hash the
+            # internal user id so it can never become a path component.
+            workspace_root=self._workspace_root / (
+                "system" if state.user_id is None
+                else hashlib.sha256(state.user_id.encode("utf-8")).hexdigest()
+            ),
             granted_permissions=frozenset(state.granted_permissions),
             settings=dict(state.settings),
             secrets=decrypted,

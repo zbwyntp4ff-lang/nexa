@@ -50,11 +50,19 @@ class LocalMemoryStore(MemoryStore):
             return
         try:
             raw = json.loads(self._path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return
-        for entry in raw.get("items", []):
-            item = MemoryItem.model_validate(entry)
-            self._items[item.id] = item
+            if not isinstance(raw, dict) or not isinstance(raw.get("items"), list):
+                raise ValueError("memory store must contain an 'items' list")
+            loaded: dict[str, MemoryItem] = {}
+            for entry in raw["items"]:
+                item = MemoryItem.model_validate(entry)
+                loaded[item.id] = item
+        except Exception as exc:
+            # A corrupt legacy memory file must never look like an empty store:
+            # the next save could otherwise overwrite the only remaining copy.
+            raise RuntimeError(
+                f"Cannot load NEXA memory store at {self._path}: {exc}"
+            ) from exc
+        self._items = loaded
     def _flush(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"items": [item.model_dump(mode="json") for item in self._items.values()]}

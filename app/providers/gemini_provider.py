@@ -63,13 +63,13 @@ class GeminiProvider(AIProvider):
 
     def _url(self, stream: bool = False) -> str:
         action = "streamGenerateContent" if stream else "generateContent"
-        return f"{_API_ROOT}/models/{self._model}:{action}?key={self._api_key}"
+        return f"{_API_ROOT}/models/{self._model}:{action}"
 
     async def generate(self, messages: list[ChatMessage]) -> str:
         payload = {"contents": self._contents(messages)}
         try:
             async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
-                response = await client.post(self._url(False), json=payload)
+                response = await client.post(self._url(False), json=payload, headers={"x-goog-api-key": self._api_key})
         except httpx.TimeoutException as exc:
             raise ProviderTimeoutError() from exc
         except Exception as exc:  # noqa: BLE001
@@ -96,9 +96,9 @@ class GeminiProvider(AIProvider):
 
     async def health_check(self) -> bool:
         try:
-            url = f"{_API_ROOT}/models/{self._model}?key={self._api_key}"
+            url = f"{_API_ROOT}/models/{self._model}"
             async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(url)
+                response = await client.get(url, headers={"x-goog-api-key": self._api_key})
             return response.status_code < 400
         except Exception:  # noqa: BLE001
             return False

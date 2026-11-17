@@ -121,6 +121,8 @@ def test_device_login_approve_and_poll(auth_env):
     polled = desktop.post("/api/v1/auth/device/poll", json={"device_code": device_code})
     assert polled.status_code == 200, polled.text
     assert polled.json()["user"]["email"] == "ada@nexa.test"
+    assert "session_token" not in polled.json()
+    assert "nexa_session" in polled.cookies
     me = desktop.get("/api/v1/auth/me")
     assert me.status_code == 200
 
@@ -146,6 +148,8 @@ def test_device_password_login_approves(auth_env):
     polled = desktop.post("/api/v1/auth/device/poll", json={"device_code": body["device_code"]})
     assert polled.status_code == 200
     assert polled.json()["user"]["email"] == "ada@nexa.test"
+    assert "session_token" not in polled.json()
+    assert "nexa_session" in polled.cookies
 
 
 def test_register_requires_consents(auth_env):
@@ -211,7 +215,7 @@ def test_full_auth_flow(auth_env):
     assert login.status_code == 200
     assert "nexa_session" in login.cookies
     assert login.json()["user"]["is_owner"] is True
-    assert login.json().get("session_token")
+    assert "session_token" not in login.json()
 
     client.post("/api/v1/auth/logout")
     login_username = client.post(
@@ -335,6 +339,7 @@ def test_single_user_owner_setup(tmp_path, monkeypatch):
     assert body["user"]["is_owner"] is True
     assert body["user"]["email_verified"] is True
     assert "nexa_session" in created.cookies
+    assert "session_token" not in body
 
     blocked = client.post(
         "/api/v1/auth/register",
@@ -476,3 +481,40 @@ def test_google_oauth_file_enables_provider(tmp_path, monkeypatch):
     status = {row["id"]: row["enabled"] for row in list_provider_status(settings)}
     assert status["google"] is True
     assert status["github"] is False
+
+
+
+def test_oauth_email_verified_string_false_is_not_trusted():
+    from app.auth.oauth import _as_bool
+
+    assert _as_bool("false", default=True) is False
+    assert _as_bool("0", default=True) is False
+    assert _as_bool("true") is True
+    assert _as_bool(True) is True
+
+
+def test_corrupt_auth_store_fails_closed(tmp_path: Path):
+    """A corrupt account database must not silently become an empty account list."""
+    store_path = tmp_path / "auth.json"
+    store_path.write_text('{"users": [', encoding="utf-8")
+    with pytest.raises(RuntimeError, match="Cannot load NEXA auth store"):
+        AuthStore(store_path)
+
+
+def test_missing_auth_store_starts_empty(tmp_path: Path):
+    """A genuinely new install still starts with an empty account database."""
+    store = AuthStore(tmp_path / "new-auth.json")
+    assert store.list_users() == []
+
+
+def test_ipconfig_output_uses_portable_text_encoding(monkeypatch):
+    import subprocess
+    from app.auth.service import _ipv4s_from_ipconfig
+
+    def fake_check_output(command, **kwargs):
+        assert command == ["ipconfig"]
+        assert kwargs["encoding"] == "utf-8"
+        return "IPv4 Address. . . . . . . . . . . : 192.168.1.25"
+
+    monkeypatch.setattr(subprocess, "check_output", fake_check_output)
+    assert _ipv4s_from_ipconfig() == ["192.168.1.25"]

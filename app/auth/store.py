@@ -37,8 +37,13 @@ class AuthStore:
             return
         try:
             raw = json.loads(self._path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return
+        except (json.JSONDecodeError, OSError) as exc:
+            # Never silently treat an unreadable/corrupt account database as
+            # an empty store: that makes every existing login look invalid
+            # and can overwrite the only copy on the next account write.
+            raise RuntimeError(
+                f"Cannot load NEXA auth store at {self._path}: {exc}"
+            ) from exc
         dirty = False
         for entry in raw.get("users", []):
             user = UserRecord.model_validate(entry)

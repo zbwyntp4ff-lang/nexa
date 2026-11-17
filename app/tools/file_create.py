@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 from app.models.errors import PathTraversalError
 from app.tools.base import Tool, ToolResult
-from app.tools.sandbox import resolve_safe_path
+from app.tools.sandbox import resolve_safe_path, user_workspace_root
 class FileCreateTool(Tool):
     name = "file_create"
     description = "Create a new file inside the agent workspace. Refuses to overwrite existing files."
@@ -27,7 +27,7 @@ class FileCreateTool(Tool):
         if content is None or not isinstance(content, str):
             return ToolResult(success=False, error="'content' must be a string.")
         try:
-            target = resolve_safe_path(self._sandbox_root, raw_path)
+            target = resolve_safe_path(user_workspace_root(self._sandbox_root, kwargs.get("user_id")), raw_path)
         except PathTraversalError as exc:
             return ToolResult(success=False, error=str(exc))
         if target.exists():

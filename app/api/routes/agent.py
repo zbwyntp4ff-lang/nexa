@@ -53,7 +53,7 @@ async def run_agent(
     x_request_id: Annotated[str | None, Header()] = None,
 ) -> AgentRunResponse:
     context = (
-        attachments.document_context(request.attachment_ids, query=request.task)
+        attachments.document_context(request.attachment_ids, query=request.task, user_id=user.id if user is not None else None)
         if request.attachment_ids
         else None
     )

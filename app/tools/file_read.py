@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 from app.models.errors import PathTraversalError
 from app.tools.base import Tool, ToolResult
-from app.tools.sandbox import resolve_safe_path
+from app.tools.sandbox import resolve_safe_path, user_workspace_root
 class FileReadTool(Tool):
     name = "file_read"
     description = "Read the contents of a text file inside the agent workspace sandbox."
@@ -24,7 +24,7 @@ class FileReadTool(Tool):
         if not raw_path or not isinstance(raw_path, str):
             return ToolResult(success=False, error="'path' must be a non-empty string.")
         try:
-            target = resolve_safe_path(self._sandbox_root, raw_path)
+            target = resolve_safe_path(user_workspace_root(self._sandbox_root, kwargs.get("user_id")), raw_path)
         except PathTraversalError as exc:
             return ToolResult(success=False, error=str(exc))
         if not target.exists():

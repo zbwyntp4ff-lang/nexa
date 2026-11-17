@@ -40,7 +40,6 @@ export interface RegisterResult {
   resend_available_at: string;
   ready?: boolean;
   message: string;
-  session_token?: string | null;
 }
 
 export interface AuthStatus {
@@ -78,7 +77,6 @@ export interface LoginResult {
   user: AuthUser;
   expires_at: string;
   message: string;
-  session_token?: string | null;
 }
 
 export function registerAccount(payload: RegisterPayload, signal?: AbortSignal) {
