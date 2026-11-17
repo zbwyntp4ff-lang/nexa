@@ -9,6 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from app.api.routes import (
+    agents,
     agent,
     attachments,
     auth,
@@ -255,6 +256,7 @@ async def device_login_page() -> HTMLResponse:
 app.include_router(health.router)
 app.include_router(status.router)
 app.include_router(auth.router)
+app.include_router(agents.router)
 app.include_router(profile.router)
 app.include_router(billing.router)
 app.include_router(tokens.router)
