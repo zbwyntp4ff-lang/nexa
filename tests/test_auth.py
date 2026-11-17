@@ -121,6 +121,8 @@ def test_device_login_approve_and_poll(auth_env):
     polled = desktop.post("/api/v1/auth/device/poll", json={"device_code": device_code})
     assert polled.status_code == 200, polled.text
     assert polled.json()["user"]["email"] == "ada@nexa.test"
+    assert "session_token" not in polled.json()
+    assert "nexa_session" in polled.cookies
     me = desktop.get("/api/v1/auth/me")
     assert me.status_code == 200
 
@@ -146,6 +148,8 @@ def test_device_password_login_approves(auth_env):
     polled = desktop.post("/api/v1/auth/device/poll", json={"device_code": body["device_code"]})
     assert polled.status_code == 200
     assert polled.json()["user"]["email"] == "ada@nexa.test"
+    assert "session_token" not in polled.json()
+    assert "nexa_session" in polled.cookies
 
 
 def test_register_requires_consents(auth_env):
@@ -211,7 +215,7 @@ def test_full_auth_flow(auth_env):
     assert login.status_code == 200
     assert "nexa_session" in login.cookies
     assert login.json()["user"]["is_owner"] is True
-    assert login.json().get("session_token")
+    assert "session_token" not in login.json()
 
     client.post("/api/v1/auth/logout")
     login_username = client.post(
@@ -335,6 +339,7 @@ def test_single_user_owner_setup(tmp_path, monkeypatch):
     assert body["user"]["is_owner"] is True
     assert body["user"]["email_verified"] is True
     assert "nexa_session" in created.cookies
+    assert "session_token" not in body
 
     blocked = client.post(
         "/api/v1/auth/register",
