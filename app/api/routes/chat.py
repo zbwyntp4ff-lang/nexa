@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -71,14 +71,23 @@ def _apply_public_beta_restrictions(
     """Keep anonymous beta traffic on the default text-chat path."""
     if not settings.nexa_public_beta or user is not None:
         return request
+    if len(request.message) > 3000:
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "error": "beta_message_too_long",
+                "message": "В бета-версии длина одного сообщения ограничена 3000 символами.",
+            },
+        )
+    history = [
+        message.model_copy(update={"content": message.content[:3000], "images": []})
+        for message in request.history[-10:]
+    ]
     return request.model_copy(
         update={
             "model": None,
             "task": None,
-            "history": [
-                message.model_copy(update={"images": []})
-                for message in request.history
-            ],
+            "history": history,
             "attachment_ids": [],
             "use_knowledge_base": False,
             "knowledge_project_id": None,
