@@ -53,7 +53,7 @@ export function AppShell() {
           )}
         </main>
       </div>
-      {isChat && <RightDock />}
+      {isChat && !isPublicBeta && <RightDock />}
       <SettingsDialog />
       <PlanPromoDialog />
       <ProjectPanel />
