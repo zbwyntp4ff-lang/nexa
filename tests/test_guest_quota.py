@@ -100,3 +100,26 @@ def test_guest_quota_blocks_after_fifteen_daily_requests(tmp_path, monkeypatch):
         consume_guest_request(_Request())
     assert exc.value.status_code == 429
     assert exc.value.detail["daily_limit"] == 15
+
+
+def test_public_beta_forces_default_text_chat(monkeypatch):
+    from app.api.routes.chat import _apply_public_beta_restrictions
+    from app.config.settings import Settings
+    from app.models.chat import ChatRequest
+
+    monkeypatch.setenv("NEXA_PUBLIC_BETA", "true")
+    settings = Settings(_env_file=None)
+    request = ChatRequest(
+        message="hello",
+        model="some-expensive-model",
+        task="research",
+        attachment_ids=["attachment-1"],
+        use_knowledge_base=True,
+        knowledge_project_id="project-1",
+    )
+    limited = _apply_public_beta_restrictions(request, None, settings)
+    assert limited.model is None
+    assert limited.task is None
+    assert limited.attachment_ids == []
+    assert limited.use_knowledge_base is False
+    assert limited.knowledge_project_id is None
