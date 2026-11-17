@@ -1,121 +1,130 @@
-# NEXA — Public Beta Security & Operations Audit
+# NEXA — Аудит безопасности и готовности к публичной бете
 
-**Audit date:** 2026-11-17  
-**Reviewed ref:** `fix/security-and-reliability-non-billing`  
-**Reviewed commit:** `5c342a6000aa97ca17fd52a7b1fc18bdebde55e6`  
-**Verdict:** **NO-GO for open public beta**. This is a repository/configuration review, not a penetration test or live staging validation.
+**Дата аудита:** 17 ноября 2026 года  
+**Проверенная ветка:** `fix/security-and-reliability-non-billing`  
+**Проверенный коммит:** `5c342a6000aa97ca17fd52a7b1fc18bdebde55e6`  
+**Вердикт:** **НЕ ГОТОВ К ОТКРЫТОЙ ПУБЛИЧНОЙ БЕТЕ.** Это проверка репозитория и конфигурации, а не тест на проникновение и не проверка работающего тестового сервера.
 
-## Executive summary
+## Краткий вывод
 
-The latest GitHub Actions CI run is green: Python tests, frontend tests + production build, Electron IPC packaging tests, and Docker build/smoke all completed successfully. The attached dependency audit artifacts show **0 known Python advisories** and **9 npm moderate advisories** (0 high, 0 critical).
+Последний запуск GitHub Actions завершился успешно: прошли тесты Python, тесты интерфейса и production-сборка, тесты упаковки Electron IPC, а также сборка и проверка Docker-образа. В отчётах проверки зависимостей обнаружено **0 известных предупреждений по зависимостям Python** и **9 предупреждений среднего уровня по npm** (0 высокого и 0 критического уровня).
 
-Green CI does not establish production readiness. The repository's own `OPEN_BETA_READINESS.md` correctly records that no staging deployment or end-to-end public-beta smoke has been completed.
+Успешные автоматические проверки сами по себе не подтверждают готовность к эксплуатации. В документе репозитория `OPEN_BETA_READINESS.md` верно указано, что тестовый сервер ещё не развёрнут и полный сценарий проверки публичной беты не пройден.
 
-## Findings
+## Обнаруженные проблемы
 
-### P1 — Browser session bearer token is exposed to JavaScript
+### P1 — Токен браузерной сессии доступен JavaScript
 
-**Evidence**
-- `app/api/routes/auth.py` returns `session_token` in JSON from login, owner setup, and device-login completion, while also setting an HttpOnly cookie.
-- `frontend/src/lib/session-token.ts` writes the token to `window.localStorage` under `nexa_session_token`.
-- `frontend/src/lib/api.ts` reads that token and sends it as an Authorization bearer token.
+**Подтверждения**
+- `app/api/routes/auth.py` возвращает `session_token` в JSON при входе, первоначальной настройке учётной записи владельца и завершении входа через устройство. Одновременно устанавливается cookie с флагом HttpOnly.
+- `frontend/src/lib/session-token.ts` записывает токен в `window.localStorage` под ключом `nexa_session_token`.
+- `frontend/src/lib/api.ts` считывает этот токен и отправляет его в заголовке Authorization как Bearer-токен.
 
-**Risk**
-Any successful same-origin script injection or compromised browser extension with page access can read the persistent bearer token and replay the session. The HttpOnly cookie does not protect the duplicate token stored in localStorage.
+**Риск**
 
-**Recommended remediation**
-- Use the HttpOnly cookie as the browser's only session credential; do not return bearer tokens in browser-facing JSON responses.
-- If Electron genuinely needs a bearer token, separate the desktop auth flow and store the credential in an OS-protected store (or keep it in memory where feasible), not shared browser localStorage.
-- Add regression tests proving browser login does not persist a bearer token in localStorage and cookie logout/revocation remains correct.
+Любой успешно выполненный вредоносный скрипт на том же сайте или скомпрометированное расширение браузера, имеющее доступ к странице, может прочитать сохранённый токен и использовать его для перехвата сессии. Защита HttpOnly не распространяется на дубликат токена в localStorage.
 
-**Status:** Confirmed code-level exposure; exploitability still depends on a script-injection or client-compromise path. No such exploit was demonstrated in this review.
+**Рекомендуемое исправление**
+- Для браузера использовать cookie с флагом HttpOnly как единственный способ подтверждения сессии. Не возвращать токены в JSON-ответах браузерных сценариев.
+- Если Electron действительно необходим отдельный Bearer-токен, разделить браузерный и настольный сценарии авторизации. Хранить настольный токен в защищённом хранилище операционной системы либо, где это возможно, только в оперативной памяти. Не использовать общее браузерное localStorage.
+- Добавить регрессионные тесты: браузерный вход не должен сохранять Bearer-токен в localStorage; выход и отзыв сессии через cookie должны продолжать работать.
 
-### P1 — Public rate limiting requires an edge control
+**Статус:** Уязвимый способ хранения подтверждён анализом кода. Возможность эксплуатации зависит от наличия пути внедрения скрипта или компрометации клиента. В рамках этой проверки такая атака не проводилась.
 
-**Evidence**
-- `app/web/rate_limit.py` and `app/auth/rate_limit.py` use in-process sliding-window counters.
-- `docs/EDGE_RATE_LIMITING.md` states these are single-process controls and that the shipped Caddy configuration has no distributed rate-limit module.
+### P1 — Для публичного сервиса необходим внешний ограничитель частоты запросов
 
-**Risk**
-Counters reset on restart and do not coordinate across instances. They are not sufficient protection against distributed abuse, credential stuffing, or high-volume API traffic on a public service.
+**Подтверждения**
+- `app/web/rate_limit.py` и `app/auth/rate_limit.py` используют счётчики скользящего окна в памяти отдельного процесса.
+- В `docs/EDGE_RATE_LIMITING.md` указано, что эти механизмы работают в рамках одного процесса, а штатная конфигурация Caddy не содержит распределённого модуля ограничения запросов.
 
-**Required before public beta**
-Place a trusted CDN/WAF or reverse-proxy rate limiter in front of the app; configure tighter limits for registration, login, password reset, and expensive AI endpoints. Verify the proxy-to-ASGI client-IP trust chain and spoofed-forwarded-header behavior in the actual deployment.
+**Риск**
 
-**Status:** Documented operational gap; staging edge behavior not tested.
+Счётчики сбрасываются после перезапуска и не синхронизируются между экземплярами приложения. Этого недостаточно для защиты публичного сервиса от распределённых атак, подбора паролей и большого потока запросов к API.
 
-### P1 — Persistent JSON stores constrain safe scaling and recovery
+**Что необходимо сделать до публичной беты**
 
-**Evidence**
-- `docs/STORAGE_MATRIX.md` lists auth users/sessions, profiles, tokens, billing, plugin state, knowledge documents, and other state in JSON/file stores.
-- `app/auth/store.py` protects writes with a process-local thread lock and atomically replaces a JSON file.
-- `docs/STAGING_DEPLOYMENT.md` recommends one app container with a persistent volume; workflows and rate-limit counters are in-memory.
+Установить перед приложением доверенный CDN/WAF или обратный прокси с ограничением частоты запросов. Настроить более строгие ограничения для регистрации, входа, сброса пароля и ресурсоёмких запросов к ИИ. На реальном развёртывании проверить цепочку доверия IP-адресов между прокси и ASGI, включая обработку поддельных заголовков Forwarded.
 
-**Risk**
-A thread lock is not a cross-process or cross-instance transaction mechanism. Running multiple API workers or replicas against the same JSON files can cause lost updates or inconsistent state. A persistent disk alone is not a backup.
+**Статус:** Недостаток инфраструктуры подтверждён документацией. Поведение внешнего ограничителя на тестовом сервере не проверялось.
 
-**Required before scaling beyond one app process**
-Keep a documented single-process/single-instance constraint for the first beta, or migrate shared mutable stores to a transactional database with proper concurrency control before enabling multiple workers/replicas. Define backup frequency, retention, encryption/access controls, and complete restore testing.
+### P1 — JSON-хранилища ограничивают безопасное масштабирование и восстановление данных
 
-**Status:** Architecture constraint confirmed; no multi-instance load test or restore drill completed.
+**Подтверждения**
+- В `docs/STORAGE_MATRIX.md` перечислены хранящиеся в JSON-файлах и файловой системе данные: пользователи и сессии, профили, токены, биллинг, состояние плагинов, документы базы знаний и другие данные.
+- `app/auth/store.py` защищает запись блокировкой потоков внутри одного процесса и атомарно заменяет JSON-файл.
+- В `docs/STAGING_DEPLOYMENT.md` рекомендуется один контейнер приложения с постоянным томом хранения. Рабочие процессы и счётчики ограничения запросов находятся в памяти.
 
-### P1 — Staging release gates are still blocked
+**Риск**
 
-**Evidence**
-- `docs/OPEN_BETA_READINESS.md` records no staging deployment and marks the smoke matrix NOT RUN.
-- SMTP is not configured in the documented developer environment.
-- The documented named OpenRouter model probe returned `authentication_error`; the Anthropic probe returned `provider_unavailable`. The successful `openrouter/free` probe is explicitly not accepted as a public-beta model.
-- The public-beta guard requires persistent storage, verified email, a named model, and secure production settings.
+Блокировка потоков не обеспечивает транзакционную защиту между разными процессами или экземплярами приложения. Если запустить несколько рабочих процессов API или несколько копий приложения с общими JSON-файлами, возможны потеря обновлений и несогласованность данных. Постоянный диск сам по себе не является резервной копией.
 
-**Required before public beta**
-Deploy an isolated staging environment only after the owner approves the platform/cost and supplies credentials through the platform's secret manager. Complete registration/email verification, real named-model chat, authenticated agent flow, logout, two-user isolation, kill-switch recovery, backup/restore, and edge-rate-limit checks. Do not use mock or `openrouter/free` as the production model.
+**Что необходимо сделать перед масштабированием более чем на один процесс приложения**
 
-**Status:** Blocking; no staging deploy or paid resource was initiated during this audit.
+Для первой беты зафиксировать и документировать ограничение: один экземпляр приложения и один процесс. Либо до запуска нескольких процессов и копий перенести общие изменяемые данные в транзакционную базу данных с корректным управлением параллельным доступом. Определить периодичность резервного копирования, сроки хранения копий, шифрование, контроль доступа и провести полноценную проверку восстановления.
 
-### P2 — npm moderate advisories remain
+**Статус:** Архитектурное ограничение подтверждено. Нагрузочное тестирование нескольких экземпляров и проверка восстановления резервной копии не проводились.
 
-**Evidence**
-The latest CI artifact `nexa-npm-audit-report` contains **9 moderate advisories**, including the `minimatch` dependency chain, `electron-builder` / `app-builder-lib`, and `shadcn` / `ts-morph`. The CI gate `npm audit --audit-level=high` passes because there are no high or critical advisories; it does not mean npm audit is clean.
+### P1 — Условия допуска к тестовому развёртыванию пока не выполнены
 
-**Required action**
-Review each advisory's reachability and fix availability. Upgrade or replace affected dependencies where compatible, run frontend tests, production build, Electron packaging tests, and re-export a fresh npm audit artifact. If any moderate advisory is accepted, record why and the mitigation.
+**Подтверждения**
+- В `docs/OPEN_BETA_READINESS.md` указано, что тестовый сервер не развёрнут, а таблица проверок перед запуском имеет статус NOT RUN — «не запускалось».
+- SMTP не настроен в описанном окружении разработки.
+- В документации зафиксировано, что проверка выбранной модели OpenRouter завершилась ошибкой `authentication_error`, а проверка Anthropic — `provider_unavailable`. Успешная проверка `openrouter/free` прямо не признаётся достаточной для публичной беты.
+- Проверка готовности к публичной бете требует постоянного хранилища, подтверждения электронной почты, выбранной модели и безопасных production-настроек.
 
-**Status:** Open; high/critical gate passes, moderate findings remain.
+**Что необходимо сделать до публичной беты**
 
-## Verified checks from the latest CI run
+Развернуть изолированный тестовый сервер только после согласования владельцем платформы и расходов, а также после передачи учётных данных через защищённое хранилище секретов платформы. Проверить регистрацию и подтверждение почты, реальный чат с выбранной моделью, работу авторизованного агента, выход из аккаунта, изоляцию двух пользователей, восстановление после отключения сервиса, резервное копирование и ограничения запросов на внешнем уровне. Не использовать mock-провайдер или `openrouter/free` в качестве производственной модели.
 
-| Check | Result |
+**Статус:** Блокирующая проблема. В рамках аудита тестовый сервер не разворачивался, платные ресурсы не подключались.
+
+### P2 — Остались предупреждения среднего уровня по npm-зависимостям
+
+**Подтверждения**
+
+В последнем артефакте CI `nexa-npm-audit-report` содержится **9 предупреждений среднего уровня**, в том числе в цепочках зависимостей `minimatch`, `electron-builder` / `app-builder-lib` и `shadcn` / `ts-morph`. Проверка CI `npm audit --audit-level=high` проходит, поскольку предупреждений высокого и критического уровня нет. Это не означает, что проверка npm завершилась без замечаний.
+
+**Что необходимо сделать**
+
+Проверить, затрагивает ли каждое предупреждение реально используемый код и доступны ли исправленные версии. Обновить или заменить затронутые зависимости там, где это совместимо с проектом. Затем повторно запустить тесты интерфейса, production-сборку, тесты упаковки Electron и сформировать новый отчёт npm audit. Если какое-либо предупреждение среднего уровня решено оставить, зафиксировать причину и меры снижения риска.
+
+**Статус:** Не устранено. Проверка на высокий и критический уровни проходит, предупреждения среднего уровня остаются.
+
+## Результаты проверок последнего запуска CI
+
+| Проверка | Результат |
 |---|---|
-| Python test/security/evaluation job | Passed |
-| Frontend unit tests | Passed |
-| Frontend production build | Passed |
-| Electron IPC packaging test | Passed |
-| npm high/critical audit gate | Passed |
-| Docker image build + smoke | Passed |
-| Python dependency audit artifact | 0 advisories |
-| npm dependency audit artifact | 9 moderate; 0 high; 0 critical |
-| Real staging smoke | Not run |
-| SMTP delivery | Not verified |
-| Named production model | Not verified successfully |
-| Multi-user staging isolation | Not run |
-| Backup restore drill | Not run |
-| Public edge rate-limit test | Not run |
+| Тесты Python, проверки безопасности и оценка качества | Успешно |
+| Модульные тесты интерфейса | Успешно |
+| Production-сборка интерфейса | Успешно |
+| Проверка упаковки Electron IPC | Успешно |
+| Проверка npm на высокий и критический уровни | Успешно |
+| Сборка Docker-образа и smoke-тест | Успешно |
+| Отчёт по зависимостям Python | 0 предупреждений |
+| Отчёт по npm-зависимостям | 9 среднего уровня, 0 высокого, 0 критического |
+| Проверка работающего тестового сервера | Не проводилась |
+| Доставка писем через SMTP | Не подтверждена |
+| Выбранная производственная ИИ-модель | Успешная проверка не подтверждена |
+| Изоляция нескольких пользователей на тестовом сервере | Не проверялась |
+| Проверка восстановления резервной копии | Не проводилась |
+| Проверка внешнего ограничения частоты запросов | Не проводилась |
 
-## Release decision
+## Решение о запуске
 
-**Do not open public registration yet.** The codebase has a substantially stronger automated baseline, but the remaining P1 items and staging gates must be addressed first.
+**Пока не открывать публичную регистрацию.** Автоматическая проверка проекта стала существенно надёжнее, однако до публичного запуска необходимо устранить оставшиеся проблемы P1 и выполнить проверки на тестовом сервере.
 
-Suggested order:
-1. Remove browser-accessible bearer-token persistence while preserving the Electron login flow.
-2. Decide and enforce the single-instance storage constraint for beta; document the supported deployment topology.
-3. Select and configure trusted edge rate limiting.
-4. Resolve or explicitly accept the 9 moderate npm advisories.
-5. Obtain approval for a low-cost isolated staging deployment and complete the smoke/restore matrix.
-6. Re-run the full audit against the exact release commit.
+Рекомендуемый порядок работ:
 
-## Scope and limitations
+1. Убрать доступ браузерного JavaScript к токену сессии, сохранив работоспособность входа в Electron.
+2. Для первой беты определить и обеспечить ограничение в один экземпляр приложения; документировать поддерживаемую конфигурацию развёртывания.
+3. Выбрать и настроить доверенный внешний ограничитель частоты запросов.
+4. Устранить 9 предупреждений npm среднего уровня либо документированно принять соответствующие риски.
+5. После отдельного согласования развернуть недорогой изолированный тестовый сервер и выполнить полный список проверок, включая восстановление резервной копии.
+6. Повторить аудит для точного коммита, предназначенного к выпуску.
 
-- No changes were made to billing, Stripe, subscriptions, payments, token charging, or balances.
-- No deployment, DNS change, paid infrastructure, paid model call, or production secret was used for this audit.
-- CI results were read from GitHub Actions; this review did not execute the application on the user's computer.
-- This is a focused repository/configuration audit. It is not a formal penetration test, external attack simulation, legal/privacy review, or proof of runtime security.
+## Объём и ограничения аудита
+
+- Биллинг, Stripe, подписки, платежи, списание токенов и балансы не изменялись.
+- Не выполнялись развёртывание, изменение DNS, подключение платной инфраструктуры, платные запросы к моделям и использование производственных секретов.
+- Результаты CI получены из GitHub Actions. Приложение на компьютере пользователя не запускалось.
+- Это целевая проверка репозитория и конфигурации. Она не является полноценным тестированием на проникновение, имитацией внешней атаки, юридической проверкой конфиденциальности или доказательством безопасности работающего сервиса.
