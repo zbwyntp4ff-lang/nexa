@@ -45,11 +45,13 @@ def resolve_chat_user(
     auth: Annotated[AuthService, Depends(get_auth_service)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> UserRecord | None:
+    if settings.nexa_public_beta:
+        # Every visitor on the public-beta host uses the same guest allowance,
+        # even if an old account cookie is present in this browser.
+        consume_guest_request(request)
+        return None
     token = _extract_token(request, credentials)
     if not token:
-        if settings.nexa_public_beta:
-            consume_guest_request(request)
-            return None
         if settings.tokens_enforce:
             raise UnauthorizedError()
         return None
