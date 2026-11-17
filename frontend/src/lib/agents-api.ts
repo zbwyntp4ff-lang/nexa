@@ -22,6 +22,7 @@ export function fetchAgentCatalog(q = "", category = "", signal?: AbortSignal) {
   const params = new URLSearchParams();
   if (q.trim()) params.set("q", q.trim());
   if (category) params.set("category", category);
-  const suffix = params.size ? `?${params.toString()}` : "";
+  const encoded = params.toString();
+  const suffix = encoded ? `?${encoded}` : "";
   return request<AgentCatalogResponse>(`/api/v1/agents/catalog${suffix}`, { signal });
 }
