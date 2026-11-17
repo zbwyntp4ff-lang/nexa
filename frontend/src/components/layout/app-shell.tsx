@@ -54,11 +54,11 @@ export function AppShell() {
         </main>
       </div>
       {isChat && !isPublicBeta && <RightDock />}
-      <SettingsDialog />
-      <PlanPromoDialog />
-      <ProjectPanel />
-      <GameCreatorPanel />
-      <WorkflowPanel />
+      {!isPublicBeta && <SettingsDialog />}
+      {!isPublicBeta && <PlanPromoDialog />}
+      {!isPublicBeta && <ProjectPanel />}
+      {!isPublicBeta && <GameCreatorPanel />}
+      {!isPublicBeta && <WorkflowPanel />
     </div>
   );
 }
