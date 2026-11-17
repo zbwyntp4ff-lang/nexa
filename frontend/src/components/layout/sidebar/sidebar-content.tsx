@@ -52,14 +52,15 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const openProjects = useUiStore((s) => s.openProjects);
   const profile = useProfileStore((s) => s.profile);
   const profileLoading = useProfileStore((s) => s.loading);
+  const profileError = useProfileStore((s) => s.error);
   const loadProfile = useProfileStore((s) => s.load);
   const bumpPanelMotion = useUiStore((s) => s.bumpPanelMotion);
   const activeView = useUiStore((s) => s.activeView);
   const setActiveView = useUiStore((s) => s.setActiveView);
   const [query, setQuery] = React.useState("");
   React.useEffect(() => {
-    if (!profile && !profileLoading) void loadProfile();
-  }, [profile, profileLoading, loadProfile]);
+    if (!profile && !profileLoading && !profileError) void loadProfile();
+  }, [profile, profileLoading, profileError, loadProfile]);
   const [renamingId, setRenamingId] = React.useState<string | null>(null);
   const [renameValue, setRenameValue] = React.useState("");
   const [pendingDeleteId, setPendingDeleteId] = React.useState<string | null>(null);
