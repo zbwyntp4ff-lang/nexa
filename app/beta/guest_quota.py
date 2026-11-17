@@ -73,10 +73,10 @@ def consume_guest_request(request: Request) -> dict[str, int | str]:
                 "error": "beta_limit_reached",
                 "message": "Бесплатный лимит временно исчерпан. Попробуйте позже.",
             })
-        daily_blocked = current["day_key"] == day and current["daily_count"] >= DAILY_LIMIT
+        daily_blocked = current[0] == day and current[1] >= DAILY_LIMIT
         retry_after = (
             max(1, int(86400 - (now % 86400))) if daily_blocked
-            else max(1, int(current["hour_window_start"] + 3600 - now))
+            else max(1, int(current[3] + 3600 - now))
         )
         raise HTTPException(
             status_code=429,
@@ -90,8 +90,8 @@ def consume_guest_request(request: Request) -> dict[str, int | str]:
             headers={"Retry-After": str(retry_after)},
         )
     return {
-        "daily_used": int(row["daily_count"]),
+        "daily_used": int(row[0]),
         "daily_limit": DAILY_LIMIT,
-        "hourly_used": int(row["hour_count"]),
+        "hourly_used": int(row[1]),
         "hourly_limit": HOURLY_LIMIT,
     }
