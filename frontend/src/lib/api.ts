@@ -249,6 +249,9 @@ export async function streamChat(
       }
     }
   }
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("nexa:beta-usage-refresh"));
+  }
   return {
     message: text,
     provider: donePayload.provider ?? "",
@@ -815,4 +818,16 @@ export function patchHubPluginPermissions(id: string, permissions: string[]) {
     method: "PATCH",
     body: JSON.stringify({ permissions }),
   });
+}
+
+/** Public beta allowance for the current anonymous visitor. */
+export function getBetaUsage() {
+  return request<{
+    daily_used: number;
+    daily_limit: number;
+    daily_remaining: number;
+    hourly_used: number;
+    hourly_limit: number;
+    hourly_remaining: number;
+  }>("/api/v1/beta/usage");
 }
