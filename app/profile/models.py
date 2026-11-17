@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
@@ -10,6 +10,7 @@ ResponseStyle = Literal["concise", "balanced", "detailed", "technical"]
 Personality = Literal["professional", "friendly", "direct", "technical"]
 DetailLevel = Literal["low", "medium", "high"]
 AnswerFormat = Literal["auto", "prose", "bullets", "structured"]
+Interest = Annotated[str, Field(max_length=60)]
 
 
 def utcnow() -> datetime:
@@ -23,13 +24,13 @@ class AIPreferences(BaseModel):
     brevity: DetailLevel = "medium"
     detail_level: DetailLevel = "medium"
     answer_format: AnswerFormat = "auto"
-    ai_language: str = ""  # empty = follow user message language
+    ai_language: str = Field(default="", max_length=32)  # empty = follow user message language
     default_model: str | None = None
-    preferred_name: str = ""
+    preferred_name: str = Field(default="", max_length=40)
     custom_instructions: str = Field(default="", max_length=1500)
     about_user: str = Field(default="", max_length=600)
     occupation: str = Field(default="", max_length=120)
-    interests: list[str] = Field(default_factory=list, max_length=12)
+    interests: list[Interest] = Field(default_factory=list, max_length=12)
     avoid_topics: str = Field(default="", max_length=400)
     expertise_level: Literal["beginner", "intermediate", "advanced", "expert"] = "intermediate"
     proactive_suggestions: bool = True
