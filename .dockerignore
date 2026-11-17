@@ -18,6 +18,9 @@ htmlcov
 *.log
 agent_workspace
 data
+!data/knowledge_core/
+!data/knowledge_core/packs/
+!data/knowledge_core/packs/*.json
 frontend/node_modules
 frontend/.next
 frontend/dist-electron

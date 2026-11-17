@@ -30,7 +30,7 @@ def test_knowledge_core_packs_load_and_always_quality():
     result = KnowledgeCoreComposer(packs).compose("Привет, как дела?")
     assert "quality_always" in result.pack_ids or "response_quality" in result.pack_ids
     assert result.text
-    assert "invent" in result.text.lower() or "FACT" in result.text or "echo" in result.text.lower()
+    assert "invent" in result.text.lower() or "не выдумывай" in result.text.lower() or "FACT" in result.text or "echo" in result.text.lower()
 
 
 def test_education_pack_triggers_on_ege():

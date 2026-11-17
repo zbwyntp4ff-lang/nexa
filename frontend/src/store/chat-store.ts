@@ -346,7 +346,7 @@ export const useChatStore = create<ChatStoreState>()(
           conversations: [],
           activeConversationId: null,
           projects: [],
-        } as ChatStoreState;
+        } as unknown as ChatStoreState;
       },
     },
   ),
