@@ -460,6 +460,7 @@ class AuthService:
         state: str,
         user_agent: str | None = None,
         ip_address: str | None = None,
+        apple_user: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not self._oauth_settings:
             raise ValidationAuthError("OAuth is not available.")
@@ -473,6 +474,7 @@ class AuthService:
             provider,
             code=code,
             redirect_uri=record.redirect_uri,
+            apple_user=apple_user if provider == "apple" else None,
         )
         login = self._login_with_oauth_profile(
             profile, user_agent=user_agent, ip_address=ip_address
