@@ -15,6 +15,21 @@ if (typeof window !== "undefined") {
   }
 }
 
+/** @deprecated Browser code must authenticate with HttpOnly cookies. */
+export function getSessionToken(): null {
+  return null;
+}
+
+/** @deprecated Session tokens are never persisted in browser JavaScript. */
+export function setSessionToken(_token: string | null | undefined): void {
+  // Intentionally empty. The server owns the HttpOnly session cookie.
+}
+
+/** @deprecated Session cookies are cleared by the logout endpoint. */
+export function clearSessionToken(): void {
+  // Intentionally empty. The server owns the HttpOnly session cookie.
+}
+
 export function authHeaders(extra?: HeadersInit): HeadersInit {
   return extra ?? {};
 }
