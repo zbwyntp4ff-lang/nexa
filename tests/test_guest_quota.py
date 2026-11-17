@@ -12,6 +12,7 @@ from app.db.engine import Database
 
 class _Request:
     client = SimpleNamespace(host="203.0.113.8")
+    cookies = {}
 
 
 def test_guest_quota_allows_five_per_hour_and_blocks_sixth(tmp_path, monkeypatch):
@@ -66,7 +67,9 @@ def test_public_beta_allows_guest_chat_even_when_tokens_are_enforced(monkeypatch
     consumed = []
     monkeypatch.setattr(chat_routes, "consume_guest_request", lambda request: consumed.append(request))
     request = _Request()
-    settings = Settings(_env_file=None, nexa_public_beta=True, tokens_enforce=True)
+    monkeypatch.setenv("NEXA_PUBLIC_BETA", "true")
+    monkeypatch.setenv("TOKENS_ENFORCE", "true")
+    settings = Settings(_env_file=None)
     result = chat_routes.resolve_chat_user(request, None, None, settings)
     assert result is None
     assert consumed == [request]
@@ -77,6 +80,8 @@ def test_guest_chat_stays_closed_when_public_beta_is_disabled():
     from app.auth.errors import UnauthorizedError
     from app.config.settings import Settings
 
-    settings = Settings(_env_file=None, nexa_public_beta=False, tokens_enforce=True)
+    monkeypatch.setenv("NEXA_PUBLIC_BETA", "false")
+    monkeypatch.setenv("TOKENS_ENFORCE", "true")
+    settings = Settings(_env_file=None)
     with pytest.raises(UnauthorizedError):
         chat_routes.resolve_chat_user(_Request(), None, None, settings)
