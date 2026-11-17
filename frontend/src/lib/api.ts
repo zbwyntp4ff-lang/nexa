@@ -178,14 +178,18 @@ export async function streamChat(
   if (!response.ok || !response.body) {
     let code = "HTTPError";
     let messageText = `Request failed with status ${response.status}.`;
+    let retryAfterSeconds: number | undefined;
     try {
       const body = await response.json();
-      code = body.error ?? code;
-      messageText = body.message ?? messageText;
+      const detail = body.detail ?? body;
+      code = detail.error ?? body.error ?? code;
+      messageText = detail.message ?? body.message ?? messageText;
+      const retry = Number(detail.retry_after_seconds ?? response.headers.get("Retry-After"));
+      if (Number.isFinite(retry) && retry > 0) retryAfterSeconds = retry;
     } catch {
       // body was not JSON
     }
-    throw new ApiError(response.status, code, messageText);
+    throw new ApiError(response.status, code, messageText, retryAfterSeconds);
   }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
