@@ -151,6 +151,7 @@ async def exchange_code(
     *,
     code: str,
     redirect_uri: str,
+    apple_user: dict[str, Any] | None = None,
 ) -> OAuthProfile:
     cfg = provider_configs(settings).get(provider)
     if not cfg:
@@ -164,7 +165,7 @@ async def exchange_code(
         if provider == "github":
             return await _github_profile(client, cfg, code=code, redirect_uri=redirect_uri)
         if provider == "apple":
-            return await _apple_profile(client, cfg, code=code, redirect_uri=redirect_uri)
+            return await _apple_profile(client, cfg, code=code, redirect_uri=redirect_uri, apple_user=apple_user)
     raise ValidationAuthError("Unknown OAuth provider.")
 
 
@@ -299,6 +300,7 @@ async def _apple_profile(
     *,
     code: str,
     redirect_uri: str,
+    apple_user: dict[str, Any] | None = None,
 ) -> OAuthProfile:
     token = await _token_post(client, cfg, code=code, redirect_uri=redirect_uri)
     id_token = str(token.get("id_token") or "")
@@ -335,13 +337,16 @@ async def _apple_profile(
     if not email:
         email = f"{sub[:16]}@privaterelay.appleid.com"
     local = email.split("@", 1)[0]
+    name_data = apple_user.get("name", {}) if isinstance(apple_user, dict) else {}
+    first_name = str(name_data.get("firstName") or "Apple").strip()[:64] or "Apple"
+    last_name = str(name_data.get("lastName") or "User").strip()[:64] or "User"
     return OAuthProfile(
         provider="apple",
         subject=sub,
         email=email,
         email_verified=_as_bool(payload.get("email_verified"), default=True),
-        first_name="Apple",
-        last_name="User",
+        first_name=first_name,
+        last_name=last_name,
         username_hint=_slug(local),
     )
 
