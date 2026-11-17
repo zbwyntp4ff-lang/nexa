@@ -63,6 +63,29 @@ def resolve_chat_user(
         return None
 
 
+def _apply_public_beta_restrictions(
+    request: ChatRequest,
+    user: UserRecord | None,
+    settings: Settings,
+) -> ChatRequest:
+    """Keep anonymous beta traffic on the default text-chat path."""
+    if not settings.nexa_public_beta or user is not None:
+        return request
+    return request.model_copy(
+        update={
+            "model": None,
+            "task": None,
+            "attachment_ids": [],
+            "use_knowledge_base": False,
+            "knowledge_project_id": None,
+            "knowledge_conversation_id": None,
+            "knowledge_top_k": None,
+            "project_personalization": None,
+            "apply_personalization": False,
+        }
+    )
+
+
 def _with_learning_context(
     request: ChatRequest,
     user: UserRecord | None,
@@ -140,6 +163,7 @@ async def chat(
     x_request_id: Annotated[str | None, Header()] = None,
 ) -> ChatResponse:
     request = _with_learning_context(request, user, profiles, memory)
+    request = _apply_public_beta_restrictions(request, user, settings)
     if user is None or not settings.tokens_enforce:
         return await core.chat(request)
 
@@ -171,6 +195,7 @@ async def chat_stream(
 ) -> StreamingResponse:
     """Server-sent events. Each event is a JSON object (meta, delta, or done)."""
     request = _with_learning_context(request, user, profiles, memory)
+    request = _apply_public_beta_restrictions(request, user, settings)
     rid = resolve_request_id(getattr(request, "request_id", None), x_request_id)
 
     async def events() -> AsyncIterator[str]:
