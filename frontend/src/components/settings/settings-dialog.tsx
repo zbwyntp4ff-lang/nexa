@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
 import { useUiStore, type SettingsSection } from "@/store/ui-store";
 import { AboutSection } from "./sections/about-section";
+import { AgentsSection } from "./sections/agents-section";
 import { AppearanceSection } from "./sections/appearance-section";
 import { BillingSection } from "./sections/billing-section";
 import { GeneralSection } from "./sections/general-section";
@@ -49,6 +50,7 @@ const SECTION_COMPONENTS: Record<SettingsSection, React.ComponentType> = {
   tools: ToolsSection,
   plugins: PluginsSection,
   about: AboutSection,
+  agents: AgentsSection,
 };
 
 const NAV_IDS: SettingsSection[] = [
@@ -65,6 +67,7 @@ const NAV_IDS: SettingsSection[] = [
   "tools",
   "plugins",
   "about",
+  "agents",
 ];
 
 const NAV_ICONS: Record<SettingsSection, typeof SettingsIcon> = {
@@ -81,6 +84,7 @@ const NAV_ICONS: Record<SettingsSection, typeof SettingsIcon> = {
   tools: Wrench,
   plugins: Puzzle,
   about: Info,
+  agents: Bot,
 };
 
 export function SettingsDialog() {
@@ -110,6 +114,7 @@ export function SettingsDialog() {
     tools: t("settings.tools"),
     plugins: t("settings.plugins"),
     about: t("settings.about"),
+    agents: t("settings.agents"),
   };
 
   return (
