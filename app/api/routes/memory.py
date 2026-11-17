@@ -142,7 +142,7 @@ async def delete_memory_item(
 async def clear_memory(
     type: MemoryType | None = Query(default=None),
     manager: MemoryManager = Depends(get_memory_manager_dep),
-    user: Annotated[UserRecord, Depends(require_user)] = None,
+    user: Annotated[UserRecord, Depends(require_user)],
 ) -> MemoryClearResponse:
     # Clearing is destructive: unlike local search/add in dev mode, it must
     # always be scoped to an authenticated account and can never clear all users.
