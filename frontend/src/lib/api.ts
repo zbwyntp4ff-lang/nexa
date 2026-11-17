@@ -626,6 +626,14 @@ export function deleteMemory(id: string, signal?: AbortSignal) {
     signal,
   });
 }
+
+export function clearMemory(type?: string, signal?: AbortSignal) {
+  const query = type ? `?type=${encodeURIComponent(type)}` : "";
+  return request<{ cleared: number }>(`/api/v1/memory${query}`, {
+    method: "DELETE",
+    signal,
+  });
+}
 // --- Knowledge Base / RAG (Part 9) ------------------------------------------
 export interface KnowledgeDocumentApi {
   id: string;
