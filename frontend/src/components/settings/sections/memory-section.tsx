@@ -133,7 +133,7 @@ export function MemorySection() {
           <p className="mt-1 text-sm text-muted-foreground">{t("memory.desc")}</p>
         </div>
         <AlertDialog>
-          <AlertDialogTrigger render={<Button type="button" size="sm" variant="outline" className="text-destructive hover:text-destructive" disabled={clearBusy || items.length === 0}>{t("memory.clearAll")}</Button>} />
+          <AlertDialogTrigger render={<Button type="button" size="sm" variant="outline" className="text-destructive hover:text-destructive" disabled={clearBusy}>{t("memory.clearAll")}</Button>} />
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>{t("memory.clearConfirmTitle")}</AlertDialogTitle>
