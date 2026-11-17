@@ -2,7 +2,7 @@ export const ru: Record<string, string> = {
   "sidebar.newChat": "Новый чат", "sidebar.searchChats": "Поиск чатов...", "sidebar.searchChatHistory": "Поиск по истории чатов",
   "sidebar.projects": "Проекты", "sidebar.newProject": "Новый проект", "sidebar.noProjects": "Проектов пока нет.",
   "sidebar.recentChats": "Недавние чаты", "sidebar.noChats": "Чатов пока нет — начните новый выше.",
-  "sidebar.noChatsMatch": "Ничего не найдено по вашему запросу.", "sidebar.settings": "Настройки",   "sidebar.guest": "NEXA User Guest",
+  "sidebar.noChatsMatch": "Ничего не найдено по вашему запросу.", "sidebar.profileMenu": "Меню профиля", "sidebar.settings": "Настройки",   "sidebar.guest": "NEXA User Guest",
   "sidebar.modes": "Режимы",
   "sidebar.views": "Виды",
   "sidebar.planPromoTitle": "Купить план",
