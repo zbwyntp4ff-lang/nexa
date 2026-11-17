@@ -95,3 +95,28 @@ def consume_guest_request(request: Request) -> dict[str, int | str]:
         "hourly_used": int(row[1]),
         "hourly_limit": HOURLY_LIMIT,
     }
+
+
+def get_guest_usage(request: Request) -> dict[str, int]:
+    """Read current guest usage without consuming a request."""
+    day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    row = get_database().fetchone(
+        "SELECT day_key, daily_count, hour_count, hour_window_start "
+        "FROM guest_usage WHERE client_key = ?",
+        (_client_key(request),),
+    )
+    if row is None or row[0] != day:
+        daily_used = 0
+    else:
+        daily_used = int(row[1])
+    hour_used = 0
+    if row is not None and time.time() - float(row[3]) < 3600:
+        hour_used = int(row[2])
+    return {
+        "daily_used": daily_used,
+        "daily_limit": DAILY_LIMIT,
+        "daily_remaining": max(0, DAILY_LIMIT - daily_used),
+        "hourly_used": hour_used,
+        "hourly_limit": HOURLY_LIMIT,
+        "hourly_remaining": max(0, HOURLY_LIMIT - hour_used),
+    }
