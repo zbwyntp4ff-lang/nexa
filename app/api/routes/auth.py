@@ -1,6 +1,7 @@
 """Authentication HTTP API — register, verify, login, session."""
 from __future__ import annotations
 
+import json
 from typing import Annotated, Literal
 from urllib.parse import quote, urlparse
 
@@ -326,6 +327,7 @@ async def _complete_oauth_callback(
     code: str | None,
     state: str | None,
     error: str | None,
+    apple_user: dict | None = None,
 ) -> RedirectResponse:
     settings = get_settings()
     public_base = (
@@ -341,6 +343,7 @@ async def _complete_oauth_callback(
             state=state,
             user_agent=request.headers.get("user-agent"),
             ip_address=request.client.host if request.client else None,
+            apple_user=apple_user,
         )
     except Exception as exc:
         msg = quote(getattr(exc, "code", "oauth_failed"))
@@ -373,15 +376,22 @@ async def oauth_callback_form_post(
     auth: Annotated[AuthService, Depends(get_auth_service)],
 ) -> RedirectResponse:
     # Sign in with Apple posts authorization results as form-urlencoded data.
+    apple_user = None
     try:
         form = await request.form()
         code = str(form.get("code") or "") or None
         state = str(form.get("state") or "") or None
         error = str(form.get("error") or "") or None
+        raw_user = form.get("user")
+        if provider == "apple" and raw_user:
+            parsed_user = json.loads(str(raw_user))
+            if isinstance(parsed_user, dict):
+                apple_user = parsed_user
     except Exception:
         code = state = error = None
     return await _complete_oauth_callback(
-        provider, request, auth, code=code, state=state, error=error
+        provider, request, auth, code=code, state=state, error=error,
+        apple_user=apple_user,
     )
 
 
