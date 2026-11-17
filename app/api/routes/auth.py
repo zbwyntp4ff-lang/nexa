@@ -133,7 +133,6 @@ async def register(
             resend_available_at=result["resend_available_at"],
             ready=True,
             message="Owner account ready.",
-            session_token=login["session_token"],
         )
     return RegisterResponse(
         user=UserPublic(**result["user"]),
@@ -192,7 +191,6 @@ async def login(
     return LoginResponse(
         user=UserPublic(**result["user"]),
         expires_at=result["expires_at"],
-        session_token=result["session_token"],
     )
 
 
@@ -379,7 +377,6 @@ async def device_poll(
     return LoginResponse(
         user=UserPublic(**result["user"]),
         expires_at=result["expires_at"],
-        session_token=result["session_token"],
     )
 
 
@@ -470,7 +467,6 @@ async def passkey_login_verify(
     return LoginResponse(
         user=UserPublic(**result["user"]),
         expires_at=result["expires_at"],
-        session_token=result["session_token"],
     )
 
 
