@@ -15,7 +15,6 @@ import {
   type ProvidersResult,
 } from "@/lib/auth-api";
 import { useT } from "@/lib/i18n";
-import { setSessionToken } from "@/lib/session-token";
 import { passkeyGet, webauthnSupported } from "@/lib/webauthn";
 import { useAuthStore } from "@/store/auth-store";
 
@@ -80,7 +79,6 @@ export function LoginProviders() {
       try {
         const result = await pollDeviceLogin(device.device_code);
         if (!cancelled) {
-          setSessionToken(result.session_token);
           setBusy(null);
           await bootstrap();
         }
@@ -126,7 +124,6 @@ export function LoginProviders() {
       const options = await passkeyLoginOptions();
       const assertion = await passkeyGet(options);
       const result = await passkeyLoginVerify(assertion);
-      setSessionToken(result.session_token);
       await bootstrap();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t("auth.passkeyFailed"));
