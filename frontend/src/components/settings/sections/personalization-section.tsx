@@ -244,6 +244,47 @@ export function PersonalizationSection() {
         </label>
       </section>
 
+      <section className="space-y-3">
+        <h4 className="text-sm font-medium">{t("personalization.aboutYou")}</h4>
+        <label className="flex flex-col gap-1.5 text-sm">
+          <span className="font-medium">{t("personalization.occupation")}</span>
+          <Input value={occupation} onChange={(e) => setOccupation(e.target.value)} maxLength={120} className="h-10" />
+        </label>
+        <label className="flex flex-col gap-1.5 text-sm">
+          <span className="font-medium">{t("personalization.aboutUser")}</span>
+          <textarea value={aboutUser} onChange={(e) => setAboutUser(e.target.value)} maxLength={600} rows={3} className="rounded-lg border border-input bg-transparent px-3 py-2 text-sm" />
+        </label>
+        <label className="flex flex-col gap-1.5 text-sm">
+          <span className="font-medium">{t("personalization.interests")}</span>
+          <Input value={interests} onChange={(e) => setInterests(e.target.value)} placeholder={t("personalization.interestsHint")} className="h-10" />
+        </label>
+        <label className="flex flex-col gap-1.5 text-sm">
+          <span className="font-medium">{t("personalization.expertise")}</span>
+          <select value={expertiseLevel} onChange={(e) => setExpertiseLevel(e.target.value as typeof expertiseLevel)} className="h-10 rounded-lg border border-input bg-transparent px-2.5 text-sm">
+            <option value="beginner">{t("personalization.level.beginner")}</option>
+            <option value="intermediate">{t("personalization.level.intermediate")}</option>
+            <option value="advanced">{t("personalization.level.advanced")}</option>
+            <option value="expert">{t("personalization.level.expert")}</option>
+          </select>
+        </label>
+      </section>
+
+      <section className="space-y-3">
+        <h4 className="text-sm font-medium">{t("personalization.instructionsTitle")}</h4>
+        <label className="flex flex-col gap-1.5 text-sm">
+          <span className="font-medium">{t("personalization.customInstructions")}</span>
+          <textarea value={customInstructions} onChange={(e) => setCustomInstructions(e.target.value)} maxLength={1500} rows={5} className="rounded-lg border border-input bg-transparent px-3 py-2 text-sm" placeholder={t("personalization.customInstructionsHint")} />
+        </label>
+        <label className="flex flex-col gap-1.5 text-sm">
+          <span className="font-medium">{t("personalization.avoidTopics")}</span>
+          <textarea value={avoidTopics} onChange={(e) => setAvoidTopics(e.target.value)} maxLength={400} rows={2} className="rounded-lg border border-input bg-transparent px-3 py-2 text-sm" />
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={proactiveSuggestions} onChange={(e) => setProactiveSuggestions(e.target.checked)} />
+          {t("personalization.proactive")}
+        </label>
+      </section>
+
       <section className="space-y-2">
         <h4 className="text-sm font-medium">{t("personalization.memory")}</h4>
         <p className="text-sm text-muted-foreground">{t("personalization.memoryDesc")}</p>
