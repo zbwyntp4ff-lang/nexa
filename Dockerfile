@@ -39,6 +39,8 @@ RUN pip install --upgrade pip && pip install -r requirements.txt \
     && playwright install chromium
 
 COPY app ./app
+# Ship curated, versioned Knowledge Core rules; runtime stores remain volume-only.
+COPY data/knowledge_core/packs ./data/knowledge_core/packs
 COPY scripts/prod_start.sh ./scripts/prod_start.sh
 COPY deploy/Caddyfile /etc/caddy/Caddyfile
 COPY --from=frontend-build /frontend/.next ./frontend/.next
