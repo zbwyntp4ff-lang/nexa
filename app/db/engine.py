@@ -62,6 +62,14 @@ class Database:
         );
         CREATE INDEX IF NOT EXISTS idx_conversations_user
             ON conversations (user_id, updated_at DESC);
+        CREATE TABLE IF NOT EXISTS guest_usage (
+            client_key TEXT PRIMARY KEY,
+            day_key TEXT NOT NULL,
+            daily_count INTEGER NOT NULL,
+            hour_window_start REAL NOT NULL,
+            hour_count INTEGER NOT NULL,
+            updated_at REAL NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS memory_items (
             id TEXT PRIMARY KEY,
             user_id TEXT,

@@ -178,14 +178,27 @@ export async function streamChat(
   if (!response.ok || !response.body) {
     let code = "HTTPError";
     let messageText = `Request failed with status ${response.status}.`;
+    let retryAfterSeconds: number | undefined;
     try {
       const body = await response.json();
-      code = body.error ?? code;
-      messageText = body.message ?? messageText;
+      const detail = body.detail ?? body;
+      code = detail.error ?? body.error ?? code;
+      messageText = detail.message ?? body.message ?? messageText;
+      const retry = Number(detail.retry_after_seconds ?? response.headers.get("Retry-After"));
+      if (Number.isFinite(retry) && retry > 0) retryAfterSeconds = retry;
+      if (code === "beta_limit_reached" && retryAfterSeconds) {
+        const totalMinutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+        const wait = hours > 0
+          ? `${hours} ч${minutes > 0 ? ` ${minutes} мин` : ""}`
+          : `${minutes} мин`;
+        messageText = `Бесплатный лимит исчерпан. Новые запросы будут доступны через ${wait}.`;
+      }
     } catch {
       // body was not JSON
     }
-    throw new ApiError(response.status, code, messageText);
+    throw new ApiError(response.status, code, messageText, retryAfterSeconds);
   }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -248,6 +261,9 @@ export async function streamChat(
         };
       }
     }
+  }
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("nexa:beta-usage-refresh"));
   }
   return {
     message: text,
@@ -815,4 +831,16 @@ export function patchHubPluginPermissions(id: string, permissions: string[]) {
     method: "PATCH",
     body: JSON.stringify({ permissions }),
   });
+}
+
+/** Public beta allowance for the current anonymous visitor. */
+export function getBetaUsage() {
+  return request<{
+    daily_used: number;
+    daily_limit: number;
+    daily_remaining: number;
+    hourly_used: number;
+    hourly_limit: number;
+    hourly_remaining: number;
+  }>("/api/v1/beta/usage");
 }
