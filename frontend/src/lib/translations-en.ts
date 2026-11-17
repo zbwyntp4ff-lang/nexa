@@ -2,7 +2,7 @@ export const en: Record<string, string> = {
   "sidebar.newChat": "New chat", "sidebar.searchChats": "Search chats...", "sidebar.searchChatHistory": "Search chat history",
   "sidebar.projects": "Projects", "sidebar.newProject": "New project", "sidebar.noProjects": "No projects yet.",
   "sidebar.recentChats": "Recent chats", "sidebar.noChats": "No chats yet - start one above.",
-  "sidebar.noChatsMatch": "No chats match your search.", "sidebar.settings": "Settings",   "sidebar.guest": "NEXA User Guest",
+  "sidebar.noChatsMatch": "No chats match your search.", "sidebar.profileMenu": "Profile menu", "sidebar.settings": "Settings",   "sidebar.guest": "NEXA User Guest",
   "sidebar.modes": "Modes",
   "sidebar.views": "Views",
   "sidebar.planPromoTitle": "Unlock a plan",
