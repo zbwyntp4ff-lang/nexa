@@ -85,3 +85,18 @@ def test_guest_chat_stays_closed_when_public_beta_is_disabled(monkeypatch):
     settings = Settings(_env_file=None)
     with pytest.raises(UnauthorizedError):
         chat_routes.resolve_chat_user(_Request(), None, None, settings)
+
+
+def test_guest_quota_blocks_after_fifteen_daily_requests(tmp_path, monkeypatch):
+    from app.beta import guest_quota
+
+    db = Database(f"sqlite:///{tmp_path / 'daily-beta.sqlite3'}")
+    monkeypatch.setattr(guest_quota, "get_database", lambda: db)
+    monkeypatch.setattr(guest_quota, "HOURLY_LIMIT", 20)
+    for expected in range(1, 16):
+        result = consume_guest_request(_Request())
+        assert result["daily_used"] == expected
+    with pytest.raises(HTTPException) as exc:
+        consume_guest_request(_Request())
+    assert exc.value.status_code == 429
+    assert exc.value.detail["daily_limit"] == 15
