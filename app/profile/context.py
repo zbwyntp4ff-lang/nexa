@@ -65,13 +65,30 @@ def build_compact_hint(
     if name:
         parts.append(f"Address user as {name[:40]}.")
 
+    if ai.about_user.strip():
+        parts.append(f"User context: {' '.join(ai.about_user.split())[:220]}")
+    if ai.occupation.strip():
+        parts.append(f"User occupation or role: {' '.join(ai.occupation.split())[:80]}")
+    if ai.interests:
+        interests = ", ".join(" ".join(item.split())[:40] for item in ai.interests[:8] if item.strip())
+        if interests:
+            parts.append(f"Relevant interests: {interests[:180]}")
+    if ai.expertise_level != "intermediate":
+        parts.append(f"Assumed explanation level: {ai.expertise_level}.")
+    if ai.avoid_topics.strip():
+        parts.append(f"Avoid unless requested: {' '.join(ai.avoid_topics.split())[:120]}")
+    if ai.custom_instructions.strip():
+        parts.append(f"User instructions: {' '.join(ai.custom_instructions.split())[:300]}")
+    if ai.proactive_suggestions:
+        parts.append("Offer a useful next step when it materially helps.")
+
     if project and project.instructions and project.instructions.strip():
         # Cap project instructions to keep prompt small.
         instr = " ".join(project.instructions.strip().split())
         parts.append(f"Project: {instr[:160]}")
 
     text = " ".join(parts)
-    return text[:420] if text else None
+    return text[:1200] if text else None
 
 
 def resolve_preferred_model(

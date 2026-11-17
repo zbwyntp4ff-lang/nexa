@@ -50,5 +50,5 @@ async def context_preview(
     return {
         "enabled": bool(hint),
         "hint": hint,
-        "max_chars": 420,
+        "max_chars": 1200,
     }

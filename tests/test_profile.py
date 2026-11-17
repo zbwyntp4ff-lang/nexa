@@ -95,6 +95,27 @@ def test_compact_hint_respects_toggle():
     assert "Ada" in hint or "Address" in hint
 
 
+def test_extended_personalization_fields_reach_context_hint():
+    profile = UserProfile(
+        user_id="u2",
+        ai=AIPreferences(
+            custom_instructions="Start with a short summary.",
+            about_user="I am building a software product.",
+            occupation="Founder",
+            interests=["AI", "aviation"],
+            avoid_topics="Avoid unnecessary jargon.",
+            expertise_level="advanced",
+            proactive_suggestions=True,
+        ),
+    )
+    hint = build_compact_hint(profile) or ""
+    assert "short summary" in hint
+    assert "software product" in hint
+    assert "Founder" in hint
+    assert "AI" in hint and "aviation" in hint
+    assert "advanced" in hint
+
+
 def test_project_overrides_style():
     profile = UserProfile(user_id="u1", ai=AIPreferences(response_style="balanced"))
     project = ProjectPersonalization(response_style="concise", instructions="Focus on APIs")

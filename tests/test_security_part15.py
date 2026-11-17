@@ -157,6 +157,12 @@ def test_secret_patterns_cover_stripe_and_jwt():
     )
 
 
+def test_clear_memory_requires_authentication():
+    client = TestClient(app)
+    response = client.delete("/api/v1/memory")
+    assert response.status_code == 401
+
+
 def test_plugins_require_authentication(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("PLUGIN_STORE_PATH", str(tmp_path / "plugins.json"))
     monkeypatch.setenv("PLUGIN_KEY_PATH", str(tmp_path / "plugin.key"))

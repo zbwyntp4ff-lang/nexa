@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
 import { useUiStore, type SettingsSection } from "@/store/ui-store";
 import { AboutSection } from "./sections/about-section";
+import { AgentsSection } from "./sections/agents-section";
 import { AppearanceSection } from "./sections/appearance-section";
 import { BillingSection } from "./sections/billing-section";
 import { GeneralSection } from "./sections/general-section";
@@ -49,6 +50,7 @@ const SECTION_COMPONENTS: Record<SettingsSection, React.ComponentType> = {
   tools: ToolsSection,
   plugins: PluginsSection,
   about: AboutSection,
+  agents: AgentsSection,
 };
 
 const NAV_IDS: SettingsSection[] = [
@@ -65,6 +67,7 @@ const NAV_IDS: SettingsSection[] = [
   "tools",
   "plugins",
   "about",
+  "agents",
 ];
 
 const NAV_ICONS: Record<SettingsSection, typeof SettingsIcon> = {
@@ -81,6 +84,7 @@ const NAV_ICONS: Record<SettingsSection, typeof SettingsIcon> = {
   tools: Wrench,
   plugins: Puzzle,
   about: Info,
+  agents: Bot,
 };
 
 export function SettingsDialog() {
@@ -110,6 +114,7 @@ export function SettingsDialog() {
     tools: t("settings.tools"),
     plugins: t("settings.plugins"),
     about: t("settings.about"),
+    agents: t("settings.agents"),
   };
 
   return (
@@ -122,7 +127,7 @@ export function SettingsDialog() {
     >
       <DialogContent
         className={cn(
-          "top-0 left-0 flex h-dvh max-h-dvh w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none p-0 ring-0 sm:max-w-none sm:flex-row",
+          "top-1/2 left-1/2 flex h-[min(88dvh,900px)] max-h-[88dvh] w-[min(94vw,1200px)] max-w-[1200px] -translate-x-1/2 -translate-y-1/2 flex-col gap-0 overflow-hidden rounded-2xl border border-border bg-background p-0 shadow-2xl ring-0 sm:flex-row max-sm:top-0 max-sm:left-0 max-sm:h-dvh max-sm:max-h-dvh max-sm:w-screen max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none",
           "data-open:zoom-in-100 data-closed:zoom-out-100",
         )}
       >

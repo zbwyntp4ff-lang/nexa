@@ -33,6 +33,7 @@ interface ComposerProps {
 export function Composer({ mode = "chat", onSend, onStop, isSending, disabled, placeholder }: ComposerProps) {
   const t = useT();
   const visionEnabled = usePluginsStore((s) => s.enabled.vision);
+  const enterToSend = useUiStore((s) => s.enterToSend);
   const [value, setValue] = React.useState("");
   const [attachments, setAttachments] = React.useState<AttachmentView[]>([]);
   const [isDragging, setIsDragging] = React.useState(false);
@@ -110,7 +111,7 @@ export function Composer({ mode = "chat", onSend, onStop, isSending, disabled, p
     setAttachments([]);
   }
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if ((enterToSend && e.key === "Enter" && !e.shiftKey) || (!enterToSend && e.key === "Enter" && (e.metaKey || e.ctrlKey))) {
       e.preventDefault();
       handleSubmit();
     }

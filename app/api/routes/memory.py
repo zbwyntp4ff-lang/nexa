@@ -6,7 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import get_memory_manager_dep
-from app.api.security_deps import require_user_when_enforced
+from app.api.security_deps import require_user, require_user_when_enforced
 from app.auth.models import UserRecord
 from app.learning.contradictions import find_contradictions
 from app.memory.manager import MemoryManager
@@ -140,10 +140,11 @@ async def delete_memory_item(
 
 @router.delete("", response_model=MemoryClearResponse)
 async def clear_memory(
+    user: Annotated[UserRecord, Depends(require_user)],
     type: MemoryType | None = Query(default=None),
     manager: MemoryManager = Depends(get_memory_manager_dep),
-    user: Annotated[UserRecord | None, Depends(require_user_when_enforced)] = None,
 ) -> MemoryClearResponse:
-    scoped = user.id if user is not None else None
-    cleared = manager.clear(type=type, user_id=scoped)
+    # Clearing is destructive: unlike local search/add in dev mode, it must
+    # always be scoped to an authenticated account and can never clear all users.
+    cleared = manager.clear(type=type, user_id=user.id)
     return MemoryClearResponse(cleared=cleared)

@@ -16,6 +16,13 @@ export interface AIPreferences {
   ai_language: string;
   default_model: string | null;
   preferred_name: string;
+  custom_instructions: string;
+  about_user: string;
+  occupation: string;
+  interests: string[];
+  avoid_topics: string;
+  expertise_level: "beginner" | "intermediate" | "advanced" | "expert";
+  proactive_suggestions: boolean;
 }
 
 export interface UserProfile {

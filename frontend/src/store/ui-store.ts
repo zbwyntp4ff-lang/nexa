@@ -16,7 +16,8 @@ export type SettingsSection =
   | "billing"
   | "tokens"
   | "personalization"
-  | "about";
+  | "about"
+  | "agents";
 interface UiStoreState {
   activeView: AppView;
   setActiveView: (view: AppView) => void;
@@ -24,6 +25,8 @@ interface UiStoreState {
   setMobileDrawerOpen: (open: boolean) => void;
   desktopSidebarCollapsed: boolean;
   toggleDesktopSidebar: () => void;
+  enterToSend: boolean;
+  setEnterToSend: (enabled: boolean) => void;
   settingsOpen: boolean;
   settingsSection: SettingsSection;
   openSettings: (section?: SettingsSection) => void;
@@ -56,6 +59,8 @@ export const useUiStore = create<UiStoreState>()(
       desktopSidebarCollapsed: false,
       toggleDesktopSidebar: () =>
         set((state) => ({ desktopSidebarCollapsed: !state.desktopSidebarCollapsed })),
+      enterToSend: true,
+      setEnterToSend: (enabled) => set({ enterToSend: enabled }),
       settingsOpen: false,
       settingsSection: "general",
       openSettings: (section = "general") => set({ settingsOpen: true, settingsSection: section }),
@@ -78,17 +83,19 @@ export const useUiStore = create<UiStoreState>()(
     }),
     {
       name: "nexa-ui-store",
-      version: 2,
+      version: 3,
       migrate: (persisted) => {
         const state = (persisted ?? {}) as Partial<UiStoreState>;
         return {
           desktopSidebarCollapsed: Boolean(state.desktopSidebarCollapsed),
+          enterToSend: state.enterToSend ?? true,
           // Drop any stored omniverse/hexa view from older builds.
           activeView: "chat" as const,
         };
       },
       partialize: (state) => ({
         desktopSidebarCollapsed: state.desktopSidebarCollapsed,
+        enterToSend: state.enterToSend,
         // Do not persist activeView — omniverse/hexa crashes used to reopen
         // into a broken session and show Chromium's "couldn't load" page.
       }),

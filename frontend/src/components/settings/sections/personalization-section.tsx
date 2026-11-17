@@ -53,6 +53,13 @@ export function PersonalizationSection() {
   const [preferredName, setPreferredName] = React.useState("");
   const [aiLanguage, setAiLanguage] = React.useState("");
   const [defaultModel, setDefaultModel] = React.useState("");
+  const [aboutUser, setAboutUser] = React.useState("");
+  const [occupation, setOccupation] = React.useState("");
+  const [interests, setInterests] = React.useState("");
+  const [customInstructions, setCustomInstructions] = React.useState("");
+  const [avoidTopics, setAvoidTopics] = React.useState("");
+  const [expertiseLevel, setExpertiseLevel] = React.useState<"beginner" | "intermediate" | "advanced" | "expert">("intermediate");
+  const [proactiveSuggestions, setProactiveSuggestions] = React.useState(true);
   const [hint, setHint] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
 
@@ -66,6 +73,13 @@ export function PersonalizationSection() {
     setPreferredName(profile.ai.preferred_name);
     setAiLanguage(profile.ai.ai_language);
     setDefaultModel(profile.ai.default_model ?? "");
+    setAboutUser(profile.ai.about_user ?? "");
+    setOccupation(profile.ai.occupation ?? "");
+    setInterests((profile.ai.interests ?? []).join(", "));
+    setCustomInstructions(profile.ai.custom_instructions ?? "");
+    setAvoidTopics(profile.ai.avoid_topics ?? "");
+    setExpertiseLevel(profile.ai.expertise_level ?? "intermediate");
+    setProactiveSuggestions(profile.ai.proactive_suggestions ?? true);
   }, [profile]);
 
   async function persistProfile() {
@@ -84,10 +98,24 @@ export function PersonalizationSection() {
             ai_language: "",
             default_model: null,
             preferred_name: "",
+            custom_instructions: "",
+            about_user: "",
+            occupation: "",
+            interests: [],
+            avoid_topics: "",
+            expertise_level: "intermediate",
+            proactive_suggestions: true,
           }),
           preferred_name: preferredName,
           ai_language: aiLanguage,
           default_model: defaultModel.trim() || null,
+          about_user: aboutUser,
+          occupation,
+          interests: interests.split(",").map((item) => item.trim()).filter(Boolean).slice(0, 12),
+          custom_instructions: customInstructions,
+          avoid_topics: avoidTopics,
+          expertise_level: expertiseLevel,
+          proactive_suggestions: proactiveSuggestions,
         },
       });
       const preview = await fetchContextPreview();
@@ -213,6 +241,47 @@ export function PersonalizationSection() {
             placeholder="auto"
             className="h-10"
           />
+        </label>
+      </section>
+
+      <section className="space-y-3">
+        <h4 className="text-sm font-medium">{t("personalization.aboutYou")}</h4>
+        <label className="flex flex-col gap-1.5 text-sm">
+          <span className="font-medium">{t("personalization.occupation")}</span>
+          <Input value={occupation} onChange={(e) => setOccupation(e.target.value)} maxLength={120} className="h-10" />
+        </label>
+        <label className="flex flex-col gap-1.5 text-sm">
+          <span className="font-medium">{t("personalization.aboutUser")}</span>
+          <textarea value={aboutUser} onChange={(e) => setAboutUser(e.target.value)} maxLength={600} rows={3} className="rounded-lg border border-input bg-transparent px-3 py-2 text-sm" />
+        </label>
+        <label className="flex flex-col gap-1.5 text-sm">
+          <span className="font-medium">{t("personalization.interests")}</span>
+          <Input value={interests} onChange={(e) => setInterests(e.target.value)} placeholder={t("personalization.interestsHint")} className="h-10" />
+        </label>
+        <label className="flex flex-col gap-1.5 text-sm">
+          <span className="font-medium">{t("personalization.expertise")}</span>
+          <select value={expertiseLevel} onChange={(e) => setExpertiseLevel(e.target.value as typeof expertiseLevel)} className="h-10 rounded-lg border border-input bg-transparent px-2.5 text-sm">
+            <option value="beginner">{t("personalization.level.beginner")}</option>
+            <option value="intermediate">{t("personalization.level.intermediate")}</option>
+            <option value="advanced">{t("personalization.level.advanced")}</option>
+            <option value="expert">{t("personalization.level.expert")}</option>
+          </select>
+        </label>
+      </section>
+
+      <section className="space-y-3">
+        <h4 className="text-sm font-medium">{t("personalization.instructionsTitle")}</h4>
+        <label className="flex flex-col gap-1.5 text-sm">
+          <span className="font-medium">{t("personalization.customInstructions")}</span>
+          <textarea value={customInstructions} onChange={(e) => setCustomInstructions(e.target.value)} maxLength={1500} rows={5} className="rounded-lg border border-input bg-transparent px-3 py-2 text-sm" placeholder={t("personalization.customInstructionsHint")} />
+        </label>
+        <label className="flex flex-col gap-1.5 text-sm">
+          <span className="font-medium">{t("personalization.avoidTopics")}</span>
+          <textarea value={avoidTopics} onChange={(e) => setAvoidTopics(e.target.value)} maxLength={400} rows={2} className="rounded-lg border border-input bg-transparent px-3 py-2 text-sm" />
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={proactiveSuggestions} onChange={(e) => setProactiveSuggestions(e.target.checked)} />
+          {t("personalization.proactive")}
         </label>
       </section>
 

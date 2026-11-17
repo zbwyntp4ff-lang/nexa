@@ -27,6 +27,19 @@ describe("Composer (input area)", () => {
     expect(onSend).toHaveBeenCalledTimes(1);
     expect(onSend).toHaveBeenCalledWith("Hello NEXA", undefined);
   });
+  it("uses Ctrl+Enter when Enter-to-send is disabled", async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn();
+    const { useUiStore } = await import("@/store/ui-store");
+    useUiStore.getState().setEnterToSend(false);
+    render(<Composer onSend={onSend} onStop={vi.fn()} isSending={false} />);
+    const textarea = screen.getByLabelText("Message NEXA");
+    await user.type(textarea, "line one{Enter}line two");
+    expect(onSend).not.toHaveBeenCalled();
+    await user.keyboard("{Control>}{Enter}{/Control}");
+    expect(onSend).toHaveBeenCalledWith("line one\nline two", undefined);
+    useUiStore.getState().setEnterToSend(true);
+  });
   it("does not send and inserts a newline when Shift+Enter is pressed", async () => {
     const user = userEvent.setup();
     const onSend = vi.fn();
