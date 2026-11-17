@@ -31,7 +31,7 @@ def consume_guest_request(request: Request) -> dict[str, int | str]:
     day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     key = _client_key(request)
     db = get_database()
-    row = db.fetchone(
+    cursor = db.execute(
         """
         INSERT INTO guest_usage (
             client_key, day_key, daily_count, hour_window_start, hour_count, updated_at
@@ -58,16 +58,15 @@ def consume_guest_request(request: Request) -> dict[str, int | str]:
             AND
             (guest_usage.hour_window_start <= excluded.hour_window_start - 3600
                 OR guest_usage.hour_count < ?)
-        RETURNING daily_count, hour_count, hour_window_start
         """,
         (key, day, now, now, DAILY_LIMIT, HOURLY_LIMIT),
     )
-    if row is None:
-        current = db.fetchone(
-            "SELECT day_key, daily_count, hour_count, hour_window_start "
-            "FROM guest_usage WHERE client_key = ?",
-            (key,),
-        )
+    current = db.fetchone(
+        "SELECT day_key, daily_count, hour_count, hour_window_start "
+        "FROM guest_usage WHERE client_key = ?",
+        (key,),
+    )
+    if cursor.rowcount == 0:
         if current is None:
             raise HTTPException(status_code=429, detail={
                 "error": "beta_limit_reached",
@@ -90,9 +89,9 @@ def consume_guest_request(request: Request) -> dict[str, int | str]:
             headers={"Retry-After": str(retry_after)},
         )
     return {
-        "daily_used": int(row[0]),
+        "daily_used": int(current[1]),
         "daily_limit": DAILY_LIMIT,
-        "hourly_used": int(row[1]),
+        "hourly_used": int(current[2]),
         "hourly_limit": HOURLY_LIMIT,
     }
 
