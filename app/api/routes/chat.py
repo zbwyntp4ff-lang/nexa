@@ -75,6 +75,10 @@ def _apply_public_beta_restrictions(
         update={
             "model": None,
             "task": None,
+            "history": [
+                message.model_copy(update={"images": []})
+                for message in request.history
+            ],
             "attachment_ids": [],
             "use_knowledge_base": False,
             "knowledge_project_id": None,
