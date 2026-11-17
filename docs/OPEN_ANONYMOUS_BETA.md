@@ -14,8 +14,10 @@ the browser.
   **5 requests per one-hour window and 15 requests per UTC day**.
 - Quota counters are stored in the shared SQL database in `guest_usage`.
   Clearing browser storage does not reset the counter.
-- The browser displays the remaining daily allowance. The API returns HTTP
-  429 and a `Retry-After` header when the allowance is exhausted.
+- Messages are limited to 3,000 characters and the server uses at most the
+  last 10 text-only history messages for guest requests.
+- The browser displays the remaining daily and hourly allowances. The API
+  returns HTTP 429 and a `Retry-After` header when the allowance is exhausted.
 - Other account-specific APIs remain protected by their existing auth rules.
 - Conversation history for anonymous visitors remains in the browser's local
   chat store; it is not synced to a server account.
