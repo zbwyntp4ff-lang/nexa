@@ -97,7 +97,7 @@ def provider_configs(settings: Any) -> dict[ProviderId, ProviderConfig]:
             authorize_url="https://appleid.apple.com/auth/authorize",
             token_url="https://appleid.apple.com/auth/token",
             scopes="name email",
-            extra_auth_params={"response_mode": "query"},
+            extra_auth_params={"response_mode": "form_post"},
         )
     return out
 
@@ -304,17 +304,30 @@ async def _apple_profile(
     id_token = str(token.get("id_token") or "")
     if not id_token:
         raise OAuthExchangeError("Apple did not return an id_token.")
-    # Decode payload without signature verify of JWKS here — Apple client secret
-    # already gates the token endpoint. Payload is still base64url JSON.
+    # Verify Apple's signature and standard claims before trusting the identity.
     try:
-        payload_b64 = id_token.split(".")[1]
-        pad = "=" * (-len(payload_b64) % 4)
-        import base64
-        import json
+        import jwt
+        from jwt.algorithms import RSAAlgorithm
 
-        payload = json.loads(base64.urlsafe_b64decode(payload_b64 + pad))
-    except (IndexError, ValueError, json.JSONDecodeError) as exc:
-        raise OAuthExchangeError("Invalid Apple id_token.") from exc
+        keys_response = await client.get("https://appleid.apple.com/auth/keys")
+        keys_response.raise_for_status()
+        jwks = keys_response.json()
+        header = jwt.get_unverified_header(id_token)
+        key_data = next(
+            key for key in jwks.get("keys", [])
+            if key.get("kid") == header.get("kid") and key.get("kty") == "RSA"
+        )
+        signing_key = RSAAlgorithm.from_jwk(key_data)
+        payload = jwt.decode(
+            id_token,
+            signing_key,
+            algorithms=["RS256"],
+            audience=cfg.client_id,
+            issuer="https://appleid.apple.com",
+            options={"require": ["exp", "iat", "sub", "iss", "aud"]},
+        )
+    except Exception as exc:
+        raise OAuthExchangeError("Apple identity token verification failed.") from exc
     sub = str(payload.get("sub") or "").strip()
     email = str(payload.get("email") or "").strip().lower()
     if not sub:
