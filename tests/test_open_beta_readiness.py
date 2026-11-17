@@ -293,7 +293,8 @@ def test_forgot_and_reset_password_flow(tmp_path, monkeypatch):
             json={"email": "reset@nexa.test", "password": "NewSecret123"},
         )
         assert login.status_code == 200, login.text
-        token = login.json()["session_token"]
+        token = login.cookies.get("nexa_session")
+        assert token
         out = client.post("/api/v1/auth/logout", headers={"Authorization": f"Bearer {token}"})
         assert out.status_code == 200
         me = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
