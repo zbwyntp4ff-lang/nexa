@@ -28,7 +28,7 @@ from app.gateway.models import StreamEvent
 from app.learning.memory_context import build_memory_hint
 from app.learning.settings import get_learning_settings
 from app.memory.manager import MemoryManager
-from app.models.chat import ChatRequest, ChatResponse
+from app.models.chat import ChatRequest, ChatResponse, ChatRole
 from app.models.errors import NexaError
 from app.profile.models import ProjectPersonalization
 from app.profile.service import ProfileService
@@ -82,6 +82,7 @@ def _apply_public_beta_restrictions(
     history = [
         message.model_copy(update={"content": message.content[:3000], "images": []})
         for message in request.history[-10:]
+        if message.role in {ChatRole.USER, ChatRole.ASSISTANT}
     ]
     return request.model_copy(
         update={
