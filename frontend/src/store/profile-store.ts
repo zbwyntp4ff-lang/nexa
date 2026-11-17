@@ -53,6 +53,13 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       ai_language: "",
       default_model: null,
       preferred_name: "",
+      custom_instructions: "",
+      about_user: "",
+      occupation: "",
+      interests: [],
+      avoid_topics: "",
+      expertise_level: "intermediate",
+      proactive_suggestions: true,
     };
     return get().save({ ai: { ...base, ...partial } });
   },
