@@ -176,7 +176,7 @@ export function MemorySection() {
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
           <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("memory.searchPlaceholder")} aria-label={t("memory.searchMemory")} className="pl-8" />
         </div>
-        <Select value={filterType || "all"} onValueChange={(v) => setFilterType(v === "all" ? "" : v)}>
+        <Select value={filterType || "all"} onValueChange={(v) => setFilterType(!v || v === "all" ? "" : v)}>
           <SelectTrigger className="w-full sm:w-48" aria-label={t("memory.filterType")}><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{t("memory.allTypes")}</SelectItem>
