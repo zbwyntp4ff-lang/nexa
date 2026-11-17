@@ -37,6 +37,7 @@ import { useT } from "@/lib/i18n";
 import { MODE_GRADIENT } from "@/lib/mode-theme";
 import { useChatStore } from "@/store/chat-store";
 import { useUiStore } from "@/store/ui-store";
+import { useProfileStore } from "@/store/profile-store";
 export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const t = useT();
   const conversations = useChatStore((s) => s.conversations);
@@ -49,10 +50,16 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const createProject = useChatStore((s) => s.createProject);
   const openSettings = useUiStore((s) => s.openSettings);
   const openProjects = useUiStore((s) => s.openProjects);
+  const profile = useProfileStore((s) => s.profile);
+  const profileLoading = useProfileStore((s) => s.loading);
+  const loadProfile = useProfileStore((s) => s.load);
   const bumpPanelMotion = useUiStore((s) => s.bumpPanelMotion);
   const activeView = useUiStore((s) => s.activeView);
   const setActiveView = useUiStore((s) => s.setActiveView);
   const [query, setQuery] = React.useState("");
+  React.useEffect(() => {
+    if (!profile && !profileLoading) void loadProfile();
+  }, [profile, profileLoading, loadProfile]);
   const [renamingId, setRenamingId] = React.useState<string | null>(null);
   const [renameValue, setRenameValue] = React.useState("");
   const [pendingDeleteId, setPendingDeleteId] = React.useState<string | null>(null);
@@ -277,16 +284,43 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           <Settings className="size-4" aria-hidden="true" />
           {t("sidebar.settings")}
         </button>
-        <button
-          type="button"
-          onClick={() => { openSettings("personalization"); onNavigate?.(); }}
-          className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <span className="flex size-7 items-center justify-center rounded-full nexa-gradient-chat text-[11px] font-semibold text-white">
-            N
-          </span>
-          <span className="truncate">{t("sidebar.guest")}</span>
-        </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label={t("sidebar.profileMenu")}
+              >
+                {profile?.avatar_data_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={profile.avatar_data_url} alt="" className="size-7 shrink-0 rounded-full object-cover" />
+                ) : (
+                  <span className="flex size-7 shrink-0 items-center justify-center rounded-full nexa-gradient-chat text-[11px] font-semibold text-white">
+                    {(profile?.display_name || "N").slice(0, 1).toUpperCase()}
+                  </span>
+                )}
+                <span className="min-w-0 flex-1 truncate">{profile?.display_name || t("sidebar.guest")}</span>
+                <MoreHorizontal className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              </button>
+            }
+          />
+          <DropdownMenuContent align="end" side="top" className="w-56">
+            <DropdownMenuItem onClick={() => { openSettings("personalization"); onNavigate?.(); }}>
+              {t("settings.personalization")}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { openSettings("memory"); onNavigate?.(); }}>
+              {t("settings.memory")}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { openSettings("agents"); onNavigate?.(); }}>
+              {t("settings.agents")}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { openSettings(); onNavigate?.(); }}>
+              <Settings className="size-4" aria-hidden="true" />
+              {t("sidebar.settings")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       <AlertDialog open={pendingDeleteId !== null} onOpenChange={(open) => !open && setPendingDeleteId(null)}>
         <AlertDialogContent>
