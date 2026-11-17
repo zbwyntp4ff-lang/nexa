@@ -8,6 +8,8 @@ from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.beta.guest_quota import consume_guest_request
+
 from app.api.deps import (
     get_auth_service,
     get_memory_manager_dep,
@@ -45,6 +47,9 @@ def resolve_chat_user(
 ) -> UserRecord | None:
     token = _extract_token(request, credentials)
     if not token:
+        if settings.nexa_public_beta:
+            consume_guest_request(request)
+            return None
         if settings.tokens_enforce:
             raise UnauthorizedError()
         return None
