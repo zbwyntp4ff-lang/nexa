@@ -326,6 +326,8 @@ export const ru: Record<string, string> = {
   "billing.noPayments": "Платежей пока нет.",
   "general.application": "Приложение",
   "general.appDesc": "NEXA AI — Думай. Создавай. Действуй. Состояние чата кэшируется в браузере; каждое сообщение обрабатывает backend NEXA и при настройке — выбранный AI-провайдер и опциональные сервисы (research, оплата, OAuth, речь).",
+  "general.enterToSend": "Отправлять сообщение клавишей Enter",
+  "general.enterToSendDesc": "Если выключено, Enter добавляет новую строку, а отправка выполняется через Ctrl+Enter или Cmd+Enter.",
   "general.data": "Данные", "general.clearAllChats": "Очистить все чаты",
   "general.clearAllChatsConfirm": "Очистить все чаты?", "general.clearAllChatsDesc": "Это навсегда удалит все беседы из этого браузера. Действие необратимо.",
   "general.clearAll": "Очистить все", "general.language": "Язык", "general.languageDesc": "Выберите язык интерфейса.",
