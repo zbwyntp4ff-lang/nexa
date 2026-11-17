@@ -59,8 +59,10 @@ the beta image.
   suitable for a single-instance beta with a durable volume.
 - The quota is keyed by the client IP observed by the API. Visitors behind the
   same public IP (for example, a school, office, or mobile carrier NAT) share
-  the allowance. Configure trusted proxy handling at the hosting layer and
-  never trust arbitrary client-supplied forwarding headers.
+  the allowance. A VPN or network change can produce a new IP bucket, so add
+  CDN bot challenges and edge rate limits before broad promotion. Configure
+  trusted proxy handling at the hosting layer and never trust arbitrary
+  client-supplied forwarding headers.
 - Add edge-level bot protection / rate limiting at the CDN or reverse proxy.
   The application-wide API limiter remains an additional safety layer.
 - Monitor provider spend. The anonymous quota limits chat requests; it does
