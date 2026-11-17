@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
@@ -35,6 +35,17 @@ class IntentDetectRequest(BaseModel):
     has_image: bool = False
 
 
+def _assert_video_available() -> None:
+    if get_settings().nexa_public_beta:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "beta_feature_disabled",
+                "message": "Генерация видео временно отключена в публичной бета-версии.",
+            },
+        )
+
+
 def _optional_user_id(
     request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
@@ -61,6 +72,7 @@ async def start_image_to_video(
     user_id: Annotated[str | None, Depends(_optional_user_id)],
     service: Annotated[ImageToVideoService, Depends(get_image_to_video_service)],
 ) -> VideoJobStatus:
+    _assert_video_available()
     return await service.start_job(
         attachment_ids=body.attachment_ids,
         prompt=body.prompt,
@@ -71,6 +83,7 @@ async def start_image_to_video(
 
 @router.get("/video/jobs/{job_id}", response_model=VideoJobStatus)
 async def get_video_job(job_id: str) -> VideoJobStatus:
+    _assert_video_available()
     status = await get_video_job_store().get(job_id)
     if status is None:
         raise ModelError(f"Unknown video job '{job_id}'.")
@@ -79,6 +92,7 @@ async def get_video_job(job_id: str) -> VideoJobStatus:
 
 @router.get("/video/files/{filename}")
 async def get_video_file(filename: str) -> FileResponse:
+    _assert_video_available()
     settings = get_settings()
     root = resolve_under_project_root(settings.video_storage_dir).resolve()
     candidate = (root / Path(filename).name).resolve()
