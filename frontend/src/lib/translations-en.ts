@@ -326,6 +326,8 @@ export const en: Record<string, string> = {
   "billing.noPayments": "No payments yet.",
   "general.application": "Application",
   "general.appDesc": "NEXA AI - Think. Create. Act. Chat UI state is cached in this browser; each message is processed by your NEXA backend and, when configured, by the selected AI provider and optional services (research, billing, OAuth, speech).",
+  "general.enterToSend": "Send message with Enter",
+  "general.enterToSendDesc": "When off, Enter inserts a new line; use Ctrl+Enter or Cmd+Enter to send.",
   "general.data": "Data", "general.clearAllChats": "Clear all chats",
   "general.clearAllChatsConfirm": "Clear all chats?", "general.clearAllChatsDesc": "This permanently deletes every conversation stored in this browser. This can't be undone.",
   "general.clearAll": "Clear all", "general.language": "Language", "general.languageDesc": "Choose the interface language.",
