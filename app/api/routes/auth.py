@@ -318,6 +318,40 @@ async def oauth_start(
     return OAuthStartResponse(**result)
 
 
+async def _complete_oauth_callback(
+    provider: Literal["google", "github", "apple"],
+    request: Request,
+    auth: AuthService,
+    *,
+    code: str | None,
+    state: str | None,
+    error: str | None,
+) -> RedirectResponse:
+    settings = get_settings()
+    public_base = (
+        settings.auth_public_base_url or settings.billing_public_base_url or ""
+    ).rstrip("/") or "http://localhost:4820"
+    if error or not code or not state:
+        msg = quote(error or "oauth_denied")
+        return RedirectResponse(url=f"{public_base}/?auth_error={msg}", status_code=302)
+    try:
+        result = await auth.finish_oauth(
+            provider,  # type: ignore[arg-type]
+            code=code,
+            state=state,
+            user_agent=request.headers.get("user-agent"),
+            ip_address=request.client.host if request.client else None,
+        )
+    except Exception as exc:
+        msg = quote(getattr(exc, "code", "oauth_failed"))
+        return RedirectResponse(url=f"{public_base}/?auth_error={msg}", status_code=302)
+    frontend = auth.oauth_return_url(str(result.get("return_origin") or ""), public_base)
+    # Never put the live session token in the URL (history/Referer leak).
+    redirect = RedirectResponse(url=f"{frontend}/?oauth=ok", status_code=302)
+    _set_session_cookie(redirect, result["session_token"])
+    return redirect
+
+
 @router.get("/oauth/{provider}/callback")
 async def oauth_callback(
     provider: Literal["google", "github", "apple"],
@@ -327,25 +361,28 @@ async def oauth_callback(
     state: str | None = None,
     error: str | None = None,
 ) -> RedirectResponse:
-    settings = get_settings()
-    public_base = (
-        settings.auth_public_base_url or settings.billing_public_base_url or ""
-    ).rstrip("/") or "http://localhost:4820"
-    if error or not code or not state:
-        msg = quote(error or "oauth_denied")
-        return RedirectResponse(url=f"{public_base}/?auth_error={msg}", status_code=302)
-    result = await auth.finish_oauth(
-        provider,  # type: ignore[arg-type]
-        code=code,
-        state=state,
-        user_agent=request.headers.get("user-agent"),
-        ip_address=request.client.host if request.client else None,
+    return await _complete_oauth_callback(
+        provider, request, auth, code=code, state=state, error=error
     )
-    frontend = auth.oauth_return_url(str(result.get("return_origin") or ""), public_base)
-    # Part 15: never put the live session token in the URL (history/Referer leak).
-    redirect = RedirectResponse(url=f"{frontend}/?oauth=ok", status_code=302)
-    _set_session_cookie(redirect, result["session_token"])
-    return redirect
+
+
+@router.post("/oauth/{provider}/callback")
+async def oauth_callback_form_post(
+    provider: Literal["google", "github", "apple"],
+    request: Request,
+    auth: Annotated[AuthService, Depends(get_auth_service)],
+) -> RedirectResponse:
+    # Sign in with Apple posts authorization results as form-urlencoded data.
+    try:
+        form = await request.form()
+        code = str(form.get("code") or "") or None
+        state = str(form.get("state") or "") or None
+        error = str(form.get("error") or "") or None
+    except Exception:
+        code = state = error = None
+    return await _complete_oauth_callback(
+        provider, request, auth, code=code, state=state, error=error
+    )
 
 
 class _DeviceStartBody(BaseModel):
