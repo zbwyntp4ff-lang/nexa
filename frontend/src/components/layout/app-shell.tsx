@@ -25,7 +25,6 @@ export function AppShell() {
   const isOmni = activeView === "omniverse";
   const isHexa = activeView === "hexa";
   const isChat = activeView === "chat";
-  const isPublicBeta = process.env.NEXT_PUBLIC_NEXA_PUBLIC_BETA === "true";
 
   React.useEffect(() => {
     if (typeof window === "undefined") return;
