@@ -70,7 +70,7 @@ scanNodeModules(path.join(frontendRoot, 'node_modules'));
 
 for (const version of Object.keys(patches)) {
   assert.ok(packages.has(version), `Expected picomatch ${version} was not found`);
-  const testFile = path.join(__dirname, `picomatch-redos-${version.startsWith('2.') ? 'v2' : 'v4'}.test.cjs`);
+  const testFile = path.join(__dirname, `picomatch-redos-${version.startsWith('2.') ? 'v2' : 'v4'}.cjs`);
   const result = spawnSync(process.execPath, ['--test', testFile], {
     cwd: frontendRoot,
     encoding: 'utf8',
