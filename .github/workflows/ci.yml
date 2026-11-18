@@ -121,5 +121,5 @@ jobs:
         run: npm test
       - name: Frontend production build
         run: npm run build
-      - name: Block high and critical npm advisories
-        run: npm audit --audit-level=high
+      - name: Verify patched ReDoS dependency and audit
+        run: npm run audit:security

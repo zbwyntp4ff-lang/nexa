@@ -15,7 +15,10 @@
     "electron:build": "node scripts/electron-build.js",
     "dist:electron:icons": "node build/generate-icons.js",
     "dist:electron:linux": "npm run dist:electron:icons && npm run electron:build && electron-builder --linux AppImage",
-    "dist:electron:win": "npm run dist:electron:icons && npm run electron:build && electron-builder --win nsis portable"
+    "dist:electron:win": "npm run dist:electron:icons && npm run electron:build && electron-builder --win nsis portable",
+    "postinstall": "node scripts/apply-picomatch-security-patch.cjs",
+    "test:security-deps": "node scripts/test-picomatch-redos.cjs",
+    "audit:security": "npm run test:security-deps && node scripts/check-npm-audit.cjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
