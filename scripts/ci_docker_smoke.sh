@@ -127,7 +127,17 @@ print("health_assertions=ok")
 PY
 
 echo "==> assert Caddy listened on PORT=${CONTAINER_PORT} (from logs)"
-if ! docker logs "${CONTAINER_NAME}" 2>&1 | grep -q "starting Caddy on :${CONTAINER_PORT}"; then
+# Caddy starts asynchronously after the API health endpoint becomes ready.
+# Poll briefly to avoid a log-ordering race in fast CI containers.
+caddy_started=0
+for _ in $(seq 1 15); do
+  if docker logs "${CONTAINER_NAME}" 2>&1 | grep -Fq "starting Caddy on :${CONTAINER_PORT}"; then
+    caddy_started=1
+    break
+  fi
+  sleep 1
+done
+if [ "${caddy_started}" != "1" ]; then
   echo "Did not find Caddy start line for PORT=${CONTAINER_PORT}. Logs:" >&2
   docker logs "${CONTAINER_NAME}" >&2 || true
   exit 1
