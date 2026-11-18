@@ -34,6 +34,8 @@ jobs:
         run: |
           npm pkg set 'devDependencies.electron=^33.4.11'
           npm pkg set 'devDependencies.electron-builder=26.0.20'
+      - name: Apply only non-breaking npm security fixes
+        run: npm audit fix --no-fund || true
       - name: Regenerate lockfile and verify clean install
         run: |
           npm install --package-lock-only --ignore-scripts --no-audit --no-fund
