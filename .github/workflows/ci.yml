@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# CI executes pull-request code; its token must never be able to write repository contents.
+permissions:
+  contents: read
+
 jobs:
   pytest:
     runs-on: ubuntu-latest
