@@ -32,8 +32,8 @@ jobs:
         run: npx shadcn eject --yes
       - name: Keep Electron runtime stable and pin patched builder
         run: |
-          npm pkg set 'devDependencies.electron=^33.4.11'
-          npm pkg set 'devDependencies.electron-builder=26.0.20'
+          npm pkg set 'devDependencies.electron=45.3.4'
+          npm pkg set 'devDependencies.electron-builder=26.18.0'
       - name: Apply only non-breaking npm security fixes
         run: npm audit fix --no-fund || true
       - name: Regenerate lockfile and verify clean install
