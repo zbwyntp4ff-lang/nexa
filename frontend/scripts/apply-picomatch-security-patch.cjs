@@ -19,7 +19,7 @@ const expectedParseBlobs = {
 };
 const expectedV4ConstantsBlob = 'f0aeda7d48171c71603af40d23bd4c8de7522c0e';
 const gitBlobSha = content => crypto.createHash('sha1')
-  .update('blob ' + Buffer.byteLength(content) + '\\0')
+  .update('blob ' + Buffer.byteLength(content) + '\0')
   .update(content)
   .digest('hex');
 
