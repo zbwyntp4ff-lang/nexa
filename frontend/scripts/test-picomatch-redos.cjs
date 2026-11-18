@@ -13,6 +13,7 @@ const patchFiles = {
 const patches = Object.fromEntries(
   Object.entries(patchFiles).map(([version, file]) => [version, fs.readFileSync(file, 'utf8')])
 );
+const constantsPatch = fs.readFileSync(path.join(frontendRoot, 'patches', 'picomatch-4.0.7-constants.js'), 'utf8');
 
 const seen = new Set();
 const packages = new Map();
@@ -37,6 +38,10 @@ function inspectPackage(packageDir) {
     assert.ok(expected, `Unreviewed picomatch version found: ${manifest.version}`);
     const actual = fs.readFileSync(path.join(realPath, 'lib', 'parse.js'), 'utf8');
     assert.equal(actual, expected, `Unpatched picomatch ${manifest.version} at ${realPath}`);
+    if (manifest.version === '4.0.7') {
+      const constants = fs.readFileSync(path.join(realPath, 'lib', 'constants.js'), 'utf8');
+      assert.equal(constants, constantsPatch, `Unpatched picomatch 4.0.7 constants at ${realPath}`);
+    }
     if (!packages.has(manifest.version)) packages.set(manifest.version, []);
     packages.get(manifest.version).push(realPath);
   }
