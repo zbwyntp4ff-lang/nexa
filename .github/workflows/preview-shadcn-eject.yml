@@ -30,6 +30,10 @@ jobs:
         run: npm ci
       - name: Inline shadcn CSS and remove CLI dependency
         run: npx shadcn eject --yes
+      - name: Keep Electron runtime stable and pin patched builder
+        run: |
+          npm pkg set 'devDependencies.electron=^33.4.11'
+          npm pkg set 'devDependencies.electron-builder=26.0.20'
       - name: Regenerate lockfile and verify clean install
         run: |
           npm install --package-lock-only --ignore-scripts --no-audit --no-fund
