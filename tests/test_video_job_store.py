@@ -11,9 +11,9 @@ from app.video_generation.service import VideoJobStore
 
 @pytest.mark.asyncio
 async def test_video_job_owner_and_ready_status_survive_restart(tmp_path):
+    store = VideoJobStore(tmp_path)
     video = tmp_path / "owned.mp4"
     video.write_bytes(b"video")
-    store = VideoJobStore(tmp_path)
     status = VideoJobStatus(
         job_id="job-owned",
         phase="ready",
@@ -55,9 +55,9 @@ async def test_in_progress_video_job_is_marked_interrupted_after_restart(tmp_pat
 
 
 def test_video_account_deletion_removes_owned_file_and_manifest_entry(tmp_path):
+    store = VideoJobStore(tmp_path)
     video = tmp_path / "private.mp4"
     video.write_bytes(b"private video")
-    store = VideoJobStore(tmp_path)
     status = VideoJobStatus(
         job_id="job-private",
         phase="ready",
