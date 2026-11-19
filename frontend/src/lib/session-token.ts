@@ -1,49 +1,35 @@
-/** Client-side session token for desktop (Electron) where cookies may not
- * stick across localhost vs 127.0.0.1. Cookie auth still preferred when present.
+/**
+ * Browser sessions use only the server-set HttpOnly cookie.
+ * Never persist session credentials in JavaScript-accessible storage.
+ * This compatibility helper intentionally adds no Authorization header.
  */
-const STORAGE_KEY = "nexa_session_token";
+const LEGACY_SESSION_KEY = "nexa_session_token";
 
-export function getSessionToken(): string | null {
-  if (typeof window === "undefined") return null;
+// Remove tokens written by older NEXA versions. Do not read or reuse them:
+// browser JavaScript must never regain access to a live session credential.
+if (typeof window !== "undefined") {
   try {
-    const value = window.localStorage.getItem(STORAGE_KEY);
-    return value && value.trim() ? value.trim() : null;
+    window.localStorage.removeItem(LEGACY_SESSION_KEY);
   } catch {
-    return null;
+    // Storage may be disabled; cookie-based authentication still works.
   }
 }
 
-export function setSessionToken(token: string | null | undefined): void {
-  if (typeof window === "undefined") return;
-  try {
-    if (!token || !token.trim()) {
-      window.localStorage.removeItem(STORAGE_KEY);
-      return;
-    }
-    window.localStorage.setItem(STORAGE_KEY, token.trim());
-  } catch {
-    // private mode / quota — cookie-only fallback
-  }
+/** @deprecated Browser code must authenticate with HttpOnly cookies. */
+export function getSessionToken(): null {
+  return null;
 }
 
+/** @deprecated Session tokens are never persisted in browser JavaScript. */
+export function setSessionToken(_token: string | null | undefined): void {
+  // Intentionally empty. The server owns the HttpOnly session cookie.
+}
+
+/** @deprecated Session cookies are cleared by the logout endpoint. */
 export function clearSessionToken(): void {
-  setSessionToken(null);
+  // Intentionally empty. The server owns the HttpOnly session cookie.
 }
 
 export function authHeaders(extra?: HeadersInit): HeadersInit {
-  const token = getSessionToken();
-  const base: Record<string, string> = {};
-  if (token) base.Authorization = `Bearer ${token}`;
-  if (!extra) return base;
-  if (extra instanceof Headers) {
-    const merged = new Headers(extra);
-    if (token && !merged.has("Authorization")) merged.set("Authorization", `Bearer ${token}`);
-    return merged;
-  }
-  if (Array.isArray(extra)) {
-    return token && !extra.some(([k]) => k.toLowerCase() === "authorization")
-      ? [...extra, ["Authorization", `Bearer ${token}`]]
-      : extra;
-  }
-  return { ...base, ...extra };
+  return extra ?? {};
 }

@@ -85,23 +85,23 @@ class Orchestrator:
             timeout_seconds=self._step_timeout_seconds,
             error_limit=2,
         )
-    def _document_context_for(self, agent_type: str, attachment_ids: list[str], query: str) -> str | None:
+    def _document_context_for(self, agent_type: str, attachment_ids: list[str], query: str, user_id: str | None = None) -> str | None:
         """Resolve document context, but only for agent types allowed to see it."""
         if not attachment_ids or agent_type not in _CONTEXT_PERMITTED_AGENTS or self._attachment_manager is None:
             return None
-        context = self._attachment_manager.document_context(attachment_ids, query=query)
+        context = self._attachment_manager.document_context(attachment_ids, query=query, user_id=user_id)
         return context or None
     async def _run_subtask(
-        self, task_id: str, subtask: SubTask, attachment_ids: list[str] | None = None
+        self, task_id: str, subtask: SubTask, attachment_ids: list[str] | None = None, user_id: str | None = None
     ) -> None:
         """Run a single subtask with the matching specialized agent."""
         subtask.status = SubTaskStatus.RUNNING
         subtask.started_at = _now()
         agent = self._build_agent(subtask.agent_type)
-        context = self._document_context_for(subtask.agent_type, attachment_ids or [], subtask.description)
+        context = self._document_context_for(subtask.agent_type, attachment_ids or [], subtask.description, user_id=user_id)
         try:
             result = await asyncio.wait_for(
-                agent.run(AgentTask(description=subtask.description, context=context)),
+                agent.run(AgentTask(description=subtask.description, context=context, metadata={"user_id": user_id} if user_id else {})),
                 timeout=self._step_timeout_seconds,
             )
             subtask.result = result.final_answer or ""
@@ -149,13 +149,13 @@ class Orchestrator:
         for subtask in subtasks:
             visit(subtask)
         return resolved
-    async def _run_subtasks(self, task_id: str, subtasks: list[SubTask], attachment_ids: list[str]) -> None:
+    async def _run_subtasks(self, task_id: str, subtasks: list[SubTask], attachment_ids: list[str], user_id: str | None = None) -> None:
         """Run subtasks respecting dependencies (sequential for now, parallel later)."""
         ordered = self._resolve_dependencies(subtasks)
         for subtask in ordered:
             if subtask.status == SubTaskStatus.SKIPPED:
                 continue
-            await self._run_subtask(task_id, subtask, attachment_ids)
+            await self._run_subtask(task_id, subtask, attachment_ids, user_id=user_id)
     async def run(
         self,
         task: WorkflowTask,
@@ -167,7 +167,7 @@ class Orchestrator:
         logger.info("workflow started task_id=%s subtasks=%d", task.id, len(subtasks))
         try:
             await asyncio.wait_for(
-                self._run_subtasks(task.id, subtasks, task.attachment_ids),
+                self._run_subtasks(task.id, subtasks, task.attachment_ids, user_id=task.user_id),
                 timeout=self._timeout_seconds,
             )
         except asyncio.TimeoutError:

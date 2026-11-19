@@ -15,7 +15,7 @@ from app.models.errors import (
     UnsupportedDocumentFormatError,
 )
 from app.tools.base import Tool, ToolResult
-from app.tools.sandbox import resolve_safe_path
+from app.tools.sandbox import resolve_safe_path, user_workspace_root
 
 logger = get_logger("nexa.tools.office.analysis")
 
@@ -64,7 +64,7 @@ class FileAnalysisTool(Tool):
             limit = max_chars
 
         try:
-            target = resolve_safe_path(self._sandbox_root, raw_path)
+            target = resolve_safe_path(user_workspace_root(self._sandbox_root, kwargs.get("user_id")), raw_path)
         except PathTraversalError as exc:
             return ToolResult(
                 success=False,

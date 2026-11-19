@@ -13,11 +13,15 @@ class PluginAuditLog:
     def __init__(self) -> None:
         self._entries: list[PluginAuditEntry] = []
 
-    def record(self, *, plugin_id: str, action: str, status: str, detail: str = "") -> None:
+    def record(
+        self, *, plugin_id: str, action: str, status: str,
+        user_id: str | None = None, detail: str = ""
+    ) -> None:
         self._entries.append(
             PluginAuditEntry(
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 plugin_id=plugin_id,
+                user_id=user_id,
                 action=action,
                 status=status,
                 detail=redact_secrets(detail)[:300],

@@ -13,6 +13,7 @@ from app.tools.desktop.open_result import OpenResultTool
 from app.tools.desktop.paths import resolve_allowed_path
 from app.tools.office.result_store import ResultStore
 from app.models.errors import PathTraversalError
+from app.tools.sandbox import user_workspace_root
 
 
 @pytest.fixture(autouse=True)
@@ -171,3 +172,30 @@ def test_packaged_devtools_gated():
     src = Path("frontend/electron/main.js").read_text(encoding="utf-8")
     assert "app.isPackaged" in src
     assert "nexa:toggle-devtools" in src
+
+
+
+def test_user_workspaces_are_isolated(tmp_path):
+    root = tmp_path / "agent"
+    alice = user_workspace_root(root, "alice-123")
+    bob = user_workspace_root(root, "bob-456")
+    assert alice != bob
+    assert alice.is_relative_to(root.resolve())
+    assert bob.is_relative_to(root.resolve())
+    (alice / "private.txt").write_text("alice secret", encoding="utf-8")
+    assert not (bob / "private.txt").exists()
+
+
+def test_user_workspace_rejects_symlinked_users_directory(tmp_path):
+    root = tmp_path / "agent"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    link = root / "users"
+    try:
+        link.symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("directory symlink not permitted on this host")
+    with pytest.raises(PathTraversalError):
+        user_workspace_root(root, "alice")
+    assert not (outside / "alice").exists()

@@ -1,6 +1,7 @@
 """Authentication HTTP API — register, verify, login, session."""
 from __future__ import annotations
 
+import json
 from typing import Annotated, Literal
 from urllib.parse import quote, urlparse
 
@@ -133,7 +134,6 @@ async def register(
             resend_available_at=result["resend_available_at"],
             ready=True,
             message="Owner account ready.",
-            session_token=login["session_token"],
         )
     return RegisterResponse(
         user=UserPublic(**result["user"]),
@@ -192,7 +192,6 @@ async def login(
     return LoginResponse(
         user=UserPublic(**result["user"]),
         expires_at=result["expires_at"],
-        session_token=result["session_token"],
     )
 
 
@@ -320,6 +319,42 @@ async def oauth_start(
     return OAuthStartResponse(**result)
 
 
+async def _complete_oauth_callback(
+    provider: Literal["google", "github", "apple"],
+    request: Request,
+    auth: AuthService,
+    *,
+    code: str | None,
+    state: str | None,
+    error: str | None,
+    apple_user: dict | None = None,
+) -> RedirectResponse:
+    settings = get_settings()
+    public_base = (
+        settings.auth_public_base_url or settings.billing_public_base_url or ""
+    ).rstrip("/") or "http://localhost:4820"
+    if error or not code or not state:
+        msg = quote(error or "oauth_denied")
+        return RedirectResponse(url=f"{public_base}/?auth_error={msg}", status_code=302)
+    try:
+        result = await auth.finish_oauth(
+            provider,  # type: ignore[arg-type]
+            code=code,
+            state=state,
+            user_agent=request.headers.get("user-agent"),
+            ip_address=request.client.host if request.client else None,
+            apple_user=apple_user,
+        )
+    except Exception as exc:
+        msg = quote(getattr(exc, "code", "oauth_failed"))
+        return RedirectResponse(url=f"{public_base}/?auth_error={msg}", status_code=302)
+    frontend = auth.oauth_return_url(str(result.get("return_origin") or ""), public_base)
+    # Never put the live session token in the URL (history/Referer leak).
+    redirect = RedirectResponse(url=f"{frontend}/?oauth=ok", status_code=302)
+    _set_session_cookie(redirect, result["session_token"])
+    return redirect
+
+
 @router.get("/oauth/{provider}/callback")
 async def oauth_callback(
     provider: Literal["google", "github", "apple"],
@@ -329,25 +364,35 @@ async def oauth_callback(
     state: str | None = None,
     error: str | None = None,
 ) -> RedirectResponse:
-    settings = get_settings()
-    public_base = (
-        settings.auth_public_base_url or settings.billing_public_base_url or ""
-    ).rstrip("/") or "http://localhost:4820"
-    if error or not code or not state:
-        msg = quote(error or "oauth_denied")
-        return RedirectResponse(url=f"{public_base}/?auth_error={msg}", status_code=302)
-    result = await auth.finish_oauth(
-        provider,  # type: ignore[arg-type]
-        code=code,
-        state=state,
-        user_agent=request.headers.get("user-agent"),
-        ip_address=request.client.host if request.client else None,
+    return await _complete_oauth_callback(
+        provider, request, auth, code=code, state=state, error=error
     )
-    frontend = auth.oauth_return_url(str(result.get("return_origin") or ""), public_base)
-    # Part 15: never put the live session token in the URL (history/Referer leak).
-    redirect = RedirectResponse(url=f"{frontend}/?oauth=ok", status_code=302)
-    _set_session_cookie(redirect, result["session_token"])
-    return redirect
+
+
+@router.post("/oauth/{provider}/callback")
+async def oauth_callback_form_post(
+    provider: Literal["google", "github", "apple"],
+    request: Request,
+    auth: Annotated[AuthService, Depends(get_auth_service)],
+) -> RedirectResponse:
+    # Sign in with Apple posts authorization results as form-urlencoded data.
+    apple_user = None
+    try:
+        form = await request.form()
+        code = str(form.get("code") or "") or None
+        state = str(form.get("state") or "") or None
+        error = str(form.get("error") or "") or None
+        raw_user = form.get("user")
+        if provider == "apple" and raw_user:
+            parsed_user = json.loads(str(raw_user))
+            if isinstance(parsed_user, dict):
+                apple_user = parsed_user
+    except Exception:
+        code = state = error = None
+    return await _complete_oauth_callback(
+        provider, request, auth, code=code, state=state, error=error,
+        apple_user=apple_user,
+    )
 
 
 class _DeviceStartBody(BaseModel):
@@ -379,7 +424,6 @@ async def device_poll(
     return LoginResponse(
         user=UserPublic(**result["user"]),
         expires_at=result["expires_at"],
-        session_token=result["session_token"],
     )
 
 
@@ -470,7 +514,6 @@ async def passkey_login_verify(
     return LoginResponse(
         user=UserPublic(**result["user"]),
         expires_at=result["expires_at"],
-        session_token=result["session_token"],
     )
 
 

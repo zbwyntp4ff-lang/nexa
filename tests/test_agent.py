@@ -167,6 +167,38 @@ async def test_agent_counts_verification_failure_as_an_error(tmp_path):
     assert result.status == AgentStatus.ERROR_LIMIT_EXCEEDED
     assert all(not s.success for s in result.steps)
 # --- MAX_STEPS -----------------------------------------------------------------
+async def test_concurrent_agent_loops_keep_per_run_budgets_isolated(tmp_path):
+    class _InfinitePlanner(Planner):
+        def plan_next(self, state: AgentState) -> PlannedAction:
+            return PlannedAction(
+                type=PlannedActionType.TOOL_CALL,
+                tool_name="current_time",
+                tool_input={},
+            )
+
+    agent = _build_agent(
+        tmp_path,
+        planner=_InfinitePlanner(),
+        max_steps=9,
+        error_limit=100,
+    )
+    short_run = AgentState(task=AgentTask(description="short run"))
+    long_run = AgentState(task=AgentTask(description="long run"))
+
+    await asyncio.gather(
+        agent._run_loop(short_run, None, max_steps=1, error_limit=100),
+        agent._run_loop(long_run, None, max_steps=3, error_limit=100),
+    )
+
+    assert short_run.status == AgentStatus.MAX_STEPS_EXCEEDED
+    assert len(short_run.steps) == 1
+    assert long_run.status == AgentStatus.MAX_STEPS_EXCEEDED
+    assert len(long_run.steps) == 3
+    # Per-run limits must never mutate the cached Agent's defaults.
+    assert agent.max_steps == 9
+    assert agent.error_limit == 100
+
+
 async def test_agent_stops_at_max_steps_to_prevent_infinite_loops(tmp_path):
     class _InfinitePlanner(Planner):
         """Always asks for the current time again - never reports success as
@@ -250,3 +282,26 @@ async def test_agent_rejects_empty_task_description(tmp_path):
     agent = _build_agent(tmp_path)
     with pytest.raises(AgentTaskError):
         await agent.run(AgentTask(description="   "))
+
+async def test_agent_model_context_is_restored_when_run_raises(tmp_path):
+    from app.agent.agent import _RUN_MODEL_PROVIDER, _RUN_MODEL_ID, _RUN_MODEL_DISPLAY
+
+    class _ExplodingPlanner(Planner):
+        def plan_next(self, state: AgentState) -> PlannedAction:
+            raise RuntimeError("simulated planner failure")
+
+    agent = _build_agent(tmp_path, planner=_ExplodingPlanner())
+    provider_token = _RUN_MODEL_PROVIDER.set("outer-provider")
+    model_token = _RUN_MODEL_ID.set("outer-model")
+    display_token = _RUN_MODEL_DISPLAY.set("outer-display")
+    try:
+        with pytest.raises(RuntimeError, match="simulated planner failure"):
+            await agent.run(AgentTask(description="trigger failure"))
+        assert _RUN_MODEL_PROVIDER.get() == "outer-provider"
+        assert _RUN_MODEL_ID.get() == "outer-model"
+        assert _RUN_MODEL_DISPLAY.get() == "outer-display"
+    finally:
+        _RUN_MODEL_PROVIDER.reset(provider_token)
+        _RUN_MODEL_ID.reset(model_token)
+        _RUN_MODEL_DISPLAY.reset(display_token)
+

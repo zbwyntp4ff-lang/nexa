@@ -239,6 +239,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+from app.web.csrf import CookieCSRFMiddleware
 from app.web.rate_limit import ApiRateLimitMiddleware
 
 app.add_middleware(
@@ -246,6 +247,8 @@ app.add_middleware(
     max_calls=settings.api_rate_limit_per_minute,
     window_seconds=60.0,
 )
+
+app.add_middleware(CookieCSRFMiddleware)
 from app.auth.device_page import DEVICE_PAGE_HTML
 
 @app.get("/auth/device", include_in_schema=False)

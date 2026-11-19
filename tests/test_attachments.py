@@ -521,3 +521,22 @@ def test_voice_status_and_transcribe_are_honest_about_not_configured():
         assert transcribe.json()["error"] == "ProviderConfigurationError"
         synth = client.post("/api/v1/voice/synthesize", json={"text": "hello"})
         assert synth.status_code == 503
+
+
+async def test_attachment_content_isolated_between_users(tmp_path):
+    manager = _manager(tmp_path)
+    document = await manager.upload("private.txt", b"alice confidential content", user_id="alice")
+    image = await manager.upload("private.png", _PNG_BYTES, user_id="alice")
+
+    assert manager.get(document.id, user_id="alice").id == document.id
+    with pytest.raises(AttachmentNotFoundError):
+        manager.resolve_ids([document.id], user_id="bob")
+    assert manager.document_context([document.id], query="confidential", user_id="bob") == ""
+    assert "confidential" in manager.document_context(
+        [document.id], query="confidential", user_id="alice"
+    )
+
+    assert manager.has_images([image.id], user_id="alice") is True
+    assert manager.has_images([image.id], user_id="bob") is False
+    assert manager.image_payloads([image.id], user_id="bob") == []
+    assert len(manager.image_payloads([image.id], user_id="alice")) == 1

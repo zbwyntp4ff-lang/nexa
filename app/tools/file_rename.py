@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 from app.models.errors import PathTraversalError
 from app.tools.base import Tool, ToolResult
-from app.tools.sandbox import resolve_safe_path
+from app.tools.sandbox import resolve_safe_path, user_workspace_root
 class FileRenameTool(Tool):
     name = "file_rename"
     description = "Rename a file or directory inside the agent workspace sandbox."
@@ -27,8 +27,8 @@ class FileRenameTool(Tool):
         if not new_path or not isinstance(new_path, str):
             return ToolResult(success=False, error="'new_path' must be a non-empty string.")
         try:
-            old_target = resolve_safe_path(self._sandbox_root, old_path)
-            new_target = resolve_safe_path(self._sandbox_root, new_path)
+            old_target = resolve_safe_path(user_workspace_root(self._sandbox_root, kwargs.get("user_id")), old_path)
+            new_target = resolve_safe_path(user_workspace_root(self._sandbox_root, kwargs.get("user_id")), new_path)
         except PathTraversalError as exc:
             return ToolResult(success=False, error=str(exc))
         if not old_target.exists():

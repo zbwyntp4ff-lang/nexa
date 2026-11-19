@@ -4,6 +4,8 @@ from __future__ import annotations
 import asyncio
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
+from urllib.parse import urlparse
 
 from app.attachments.manager import AttachmentManager
 from app.billing.entitlements import EntitlementService
@@ -19,6 +21,7 @@ from app.video_generation.motion import build_motion_plan
 @dataclass
 class _Job:
     status: VideoJobStatus
+    user_id: str | None = None
     task: asyncio.Task | None = None
 
 
@@ -27,9 +30,9 @@ class VideoJobStore:
         self._jobs: dict[str, _Job] = {}
         self._lock = asyncio.Lock()
 
-    async def create(self, job_id: str, status: VideoJobStatus) -> VideoJobStatus:
+    async def create(self, job_id: str, status: VideoJobStatus, *, user_id: str | None = None) -> VideoJobStatus:
         async with self._lock:
-            self._jobs[job_id] = _Job(status=status)
+            self._jobs[job_id] = _Job(status=status, user_id=user_id)
         return status
 
     async def update(self, job_id: str, **fields) -> VideoJobStatus:
@@ -40,15 +43,62 @@ class VideoJobStore:
             job.status = VideoJobStatus(**data)
             return job.status
 
-    async def get(self, job_id: str) -> VideoJobStatus | None:
+    async def get(self, job_id: str, *, user_id: str | None = None, enforce: bool = False) -> VideoJobStatus | None:
         async with self._lock:
             job = self._jobs.get(job_id)
-            return job.status if job else None
+            if job is None:
+                return None
+            if enforce and (user_id is None or job.user_id != user_id):
+                return None
+            if user_id is not None and job.user_id != user_id:
+                return None
+            return job.status
+
+    async def can_access_file(self, filename: str, *, user_id: str | None = None, enforce: bool = False) -> bool:
+        """Allow access only when a job owned by the caller references this file."""
+        from urllib.parse import urlparse
+        async with self._lock:
+            for job in self._jobs.values():
+                video_url = job.status.video_url or ""
+                if urlparse(video_url).path.rsplit("/", 1)[-1] != filename:
+                    continue
+                if enforce and (user_id is None or job.user_id != user_id):
+                    return False
+                if user_id is not None and job.user_id != user_id:
+                    return False
+                return True
+        return False
 
     async def attach_task(self, job_id: str, task: asyncio.Task) -> None:
         async with self._lock:
             if job_id in self._jobs:
                 self._jobs[job_id].task = task
+
+
+    def delete_user_data(self, user_id: str, storage_dir: Path) -> int:
+        """Cancel a user's active jobs and remove their generated local videos."""
+        owned = [
+            (job_id, job)
+            for job_id, job in self._jobs.items()
+            if job.user_id == user_id
+        ]
+        root = storage_dir.resolve()
+        for job_id, job in owned:
+            self._jobs.pop(job_id, None)
+            if job.task is not None and not job.task.done():
+                job.task.cancel()
+            video_url = job.status.video_url or ""
+            filename = Path(urlparse(video_url).path).name
+            if not filename:
+                continue
+            candidate = root / filename
+            if candidate.is_symlink():
+                candidate.unlink(missing_ok=True)
+                continue
+            resolved = candidate.resolve()
+            if resolved != root and root in resolved.parents and resolved.is_file():
+                resolved.unlink(missing_ok=True)
+        return len(owned)
 
 
 _STORE = VideoJobStore()
@@ -85,7 +135,7 @@ class ImageToVideoService:
             raise ModelError("Message does not look like an image-to-video request.")
         if not attachment_ids:
             raise ModelError("Attach an image to animate.")
-        if not self._attachments.has_images(attachment_ids):
+        if not self._attachments.has_images(attachment_ids, user_id=user_id):
             raise ModelError("IMAGE_TO_VIDEO requires at least one image attachment.")
 
         if self._entitlements and user_id and self._settings.video_require_entitlement:
@@ -102,17 +152,17 @@ class ImageToVideoService:
             message="Queued image-to-video job",
             intent="IMAGE_TO_VIDEO",
         )
-        await self._store.create(job_id, status)
-        task = asyncio.create_task(self._run(job_id, attachment_ids, prompt))
+        await self._store.create(job_id, status, user_id=user_id)
+        task = asyncio.create_task(self._run(job_id, attachment_ids, prompt, user_id))
         await self._store.attach_task(job_id, task)
         return status
 
-    async def _run(self, job_id: str, attachment_ids: list[str], prompt: str) -> None:
+    async def _run(self, job_id: str, attachment_ids: list[str], prompt: str, user_id: str | None) -> None:
         try:
             await self._store.update(
                 job_id, phase="analyzing", progress=10, message="Analyzing image…"
             )
-            payloads = self._attachments.image_payloads(attachment_ids)
+            payloads = self._attachments.image_payloads(attachment_ids, user_id=user_id)
             if not payloads:
                 raise AttachmentNotFoundError(attachment_ids[0] if attachment_ids else "unknown")
             image_bytes, mime_type = payloads[0]

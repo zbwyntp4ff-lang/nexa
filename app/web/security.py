@@ -13,7 +13,7 @@ from __future__ import annotations
 import ipaddress
 import socket
 from collections.abc import Callable
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 from app.models.errors import InvalidURLError, SSRFProtectionError
 ALLOWED_SCHEMES: frozenset[str] = frozenset({"http", "https"})
 BLOCKED_HOSTNAMES: frozenset[str] = frozenset(
@@ -45,6 +45,7 @@ def is_ip_blocked(ip_str: str) -> bool:
         or ip.is_reserved
         or ip.is_multicast
         or ip.is_unspecified
+        or not ip.is_global
     )
 def validate_url(url: str, resolver: Resolver = _default_resolver) -> str:
     """Validate ``url`` is safe to fetch. Returns ``url`` unchanged if so.
@@ -65,6 +66,8 @@ def validate_url(url: str, resolver: Resolver = _default_resolver) -> str:
         raise SSRFProtectionError(
             f"Scheme '{scheme or '(none)'}' is not allowed. Only http/https are permitted."
         )
+    if parsed.username is not None or parsed.password is not None:
+        raise InvalidURLError("Credentials embedded in URLs are not allowed.")
     hostname = parsed.hostname
     if not hostname:
         raise InvalidURLError(f"URL has no host: {url}")
@@ -96,3 +99,44 @@ def validate_url(url: str, resolver: Resolver = _default_resolver) -> str:
                 f"Host '{hostname}' resolves to a blocked address ({ip_str})."
             )
     return url
+
+
+
+def pin_url_to_validated_address(url: str, resolver: Resolver = _default_resolver) -> tuple[str, str]:
+    """Return an IP-literal URL plus the original hostname for Host/SNI.
+
+    Validation is repeated for the exact address used by the socket. The HTTP
+    client therefore cannot perform a second DNS lookup after validation.
+    """
+    validate_url(url, resolver)
+    parsed = urlparse(url)
+    hostname = parsed.hostname
+    if hostname is None:
+        raise InvalidURLError(f"URL has no host: {url}")
+    try:
+        literal = ipaddress.ip_address(hostname)
+    except ValueError:
+        try:
+            results = resolver(hostname, parsed.port)
+        except OSError as exc:
+            raise InvalidURLError(f"Could not resolve host: {hostname}") from exc
+        if not results:
+            raise InvalidURLError(f"Could not resolve host: {hostname}")
+        addresses = [entry[4][0] for entry in results]
+        for address in addresses:
+            if is_ip_blocked(address):
+                raise SSRFProtectionError(
+                    f"Host '{hostname}' resolves to a blocked address ({address})."
+                )
+        selected = ipaddress.ip_address(addresses[0])
+    else:
+        if is_ip_blocked(str(literal)):
+            raise SSRFProtectionError(f"IP address '{literal}' is blocked.")
+        selected = literal
+
+    host_literal = f"[{selected}]" if selected.version == 6 else str(selected)
+    netloc = host_literal
+    if parsed.port is not None:
+        netloc = f"{netloc}:{parsed.port}"
+    pinned = urlunparse(parsed._replace(netloc=netloc))
+    return pinned, hostname

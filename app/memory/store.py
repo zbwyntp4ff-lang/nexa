@@ -7,6 +7,8 @@ point) - the rest of NEXA never needs to change.
 """
 from __future__ import annotations
 import json
+import os
+import tempfile
 import threading
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -49,16 +51,45 @@ class LocalMemoryStore(MemoryStore):
         if not self._path.exists():
             return
         try:
+            try:
+                os.chmod(self._path, 0o600)
+            except OSError:
+                pass
             raw = json.loads(self._path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return
-        for entry in raw.get("items", []):
-            item = MemoryItem.model_validate(entry)
-            self._items[item.id] = item
+            if not isinstance(raw, dict) or not isinstance(raw.get("items"), list):
+                raise ValueError("memory store must contain an 'items' list")
+            loaded: dict[str, MemoryItem] = {}
+            for entry in raw["items"]:
+                item = MemoryItem.model_validate(entry)
+                loaded[item.id] = item
+        except Exception as exc:
+            # A corrupt legacy memory file must never look like an empty store:
+            # the next save could otherwise overwrite the only remaining copy.
+            raise RuntimeError(
+                f"Cannot load NEXA memory store at {self._path}: {exc}"
+            ) from exc
+        self._items = loaded
     def _flush(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"items": [item.model_dump(mode="json") for item in self._items.values()]}
-        self._path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        encoded = json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=f".{self._path.name}.", suffix=".tmp", dir=self._path.parent
+        )
+        tmp = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(encoded)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp, self._path)
+            try:
+                os.chmod(self._path, 0o600)
+            except OSError:
+                pass
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
     # --- MemoryStore interface --------------------------------------------
     def save(self, item: MemoryItem) -> MemoryItem:
         with self._lock:

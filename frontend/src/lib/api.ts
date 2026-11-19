@@ -6,7 +6,7 @@
 import type { AgentStepView, BackendStatus, GatewayModelCard, GatewayModelsResponse, ModelInfo } from "./types";
 import { authHeaders } from "./session-token";
 // Undefined → local backend. Empty string → same-origin (production behind Caddy).
-// Prefer 127.0.0.1 so Electron (static on 127.0.0.1:48420) stays same-site with the API cookie.
+// Electron serves its UI on localhost; use the same hostname for the API so SameSite=Lax cookies are sent.
 const _apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
 function resolveApiBase(): string {
   if (_apiBase && _apiBase.trim()) return _apiBase.replace(/\/$/, "");
@@ -14,7 +14,7 @@ function resolveApiBase(): string {
     const port = window.location.port;
     // Next.js (dev/start) proxies /api → FastAPI. Electron static on 48420 does not.
     if (port === "4820" || port === "3000") return "";
-    if (port === "48420") return "http://127.0.0.1:8420";
+    if (port === "48420") return "http://localhost:8420";
   }
   if (_apiBase === "") return "";
   return "http://127.0.0.1:8420";

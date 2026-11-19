@@ -47,6 +47,7 @@ class WorkflowTask(BaseModel):
     description: str
     metadata: dict = Field(default_factory=dict)
     attachment_ids: list[str] = Field(default_factory=list)
+    user_id: str | None = None
     created_at: datetime = Field(default_factory=_utcnow)
 class WorkflowResult(BaseModel):
     """The final outcome of a workflow run."""

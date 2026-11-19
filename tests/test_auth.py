@@ -121,6 +121,8 @@ def test_device_login_approve_and_poll(auth_env):
     polled = desktop.post("/api/v1/auth/device/poll", json={"device_code": device_code})
     assert polled.status_code == 200, polled.text
     assert polled.json()["user"]["email"] == "ada@nexa.test"
+    assert "session_token" not in polled.json()
+    assert "nexa_session" in polled.cookies
     me = desktop.get("/api/v1/auth/me")
     assert me.status_code == 200
 
@@ -146,6 +148,8 @@ def test_device_password_login_approves(auth_env):
     polled = desktop.post("/api/v1/auth/device/poll", json={"device_code": body["device_code"]})
     assert polled.status_code == 200
     assert polled.json()["user"]["email"] == "ada@nexa.test"
+    assert "session_token" not in polled.json()
+    assert "nexa_session" in polled.cookies
 
 
 def test_register_requires_consents(auth_env):
@@ -211,7 +215,7 @@ def test_full_auth_flow(auth_env):
     assert login.status_code == 200
     assert "nexa_session" in login.cookies
     assert login.json()["user"]["is_owner"] is True
-    assert login.json().get("session_token")
+    assert "session_token" not in login.json()
 
     client.post("/api/v1/auth/logout")
     login_username = client.post(
@@ -335,6 +339,7 @@ def test_single_user_owner_setup(tmp_path, monkeypatch):
     assert body["user"]["is_owner"] is True
     assert body["user"]["email_verified"] is True
     assert "nexa_session" in created.cookies
+    assert "session_token" not in body
 
     blocked = client.post(
         "/api/v1/auth/register",
@@ -476,3 +481,148 @@ def test_google_oauth_file_enables_provider(tmp_path, monkeypatch):
     status = {row["id"]: row["enabled"] for row in list_provider_status(settings)}
     assert status["google"] is True
     assert status["github"] is False
+
+
+
+def test_oauth_email_verified_string_false_is_not_trusted():
+    from app.auth.oauth import _as_bool
+
+    assert _as_bool("false", default=True) is False
+    assert _as_bool("0", default=True) is False
+    assert _as_bool("true") is True
+    assert _as_bool(True) is True
+
+
+def test_corrupt_auth_store_fails_closed(tmp_path: Path):
+    """A corrupt account database must not silently become an empty account list."""
+    store_path = tmp_path / "auth.json"
+    store_path.write_text('{"users": [', encoding="utf-8")
+    with pytest.raises(RuntimeError, match="Cannot load NEXA auth store"):
+        AuthStore(store_path)
+
+
+def test_missing_auth_store_starts_empty(tmp_path: Path):
+    """A genuinely new install still starts with an empty account database."""
+    store = AuthStore(tmp_path / "new-auth.json")
+    assert store.list_users() == []
+
+
+def test_ipconfig_output_uses_portable_text_encoding(monkeypatch):
+    import subprocess
+    from app.auth.service import _ipv4s_from_ipconfig
+
+    def fake_check_output(command, **kwargs):
+        assert command == ["ipconfig"]
+        assert kwargs["encoding"] == "utf-8"
+        return "IPv4 Address. . . . . . . . . . . : 192.168.1.25"
+
+    monkeypatch.setattr(subprocess, "check_output", fake_check_output)
+    assert _ipv4s_from_ipconfig() == ["192.168.1.25"]
+
+def test_oauth_missing_email_verified_claim_is_unverified():
+    from app.auth.oauth import _as_bool
+
+    assert _as_bool(None, default=False) is False
+
+def test_device_session_token_is_not_persisted_to_auth_store(tmp_path: Path):
+    from datetime import timedelta
+    from app.auth.models import DeviceLoginRecord, utcnow
+
+    store_path = tmp_path / "auth.json"
+    store = AuthStore(store_path)
+    secret_token = "device-session-token-must-stay-in-memory"
+    store.save_device(
+        DeviceLoginRecord(
+            device_code="device-code",
+            user_code="ABCD-EFGH",
+            status="approved",
+            user_id="user-1",
+            session_token=secret_token,
+            expires_at=utcnow() + timedelta(minutes=5),
+        )
+    )
+    assert secret_token not in store_path.read_text(encoding="utf-8")
+    reloaded = AuthStore(store_path)
+    assert reloaded.get_device("device-code").session_token is None
+
+
+def test_delete_user_removes_device_and_passkey_challenges(tmp_path: Path):
+    from datetime import timedelta
+    from app.auth.models import (
+        DeviceLoginRecord,
+        PasskeyChallengeRecord,
+        UserRecord,
+        utcnow,
+    )
+
+    store = AuthStore(tmp_path / "auth.json")
+    user = UserRecord(
+        id="user-1", first_name="Test", last_name="User", username="test_user",
+        email="test@example.com", password_hash="unused",
+    )
+    store.save_user(user)
+    expiry = utcnow() + timedelta(minutes=5)
+    store.save_device(DeviceLoginRecord(
+        device_code="device-1", user_code="AAAA-BBBB", user_id="user-1", expires_at=expiry
+    ))
+    store.save_passkey_challenge(PasskeyChallengeRecord(
+        challenge="challenge-1", user_id="user-1", expires_at=expiry
+    ))
+
+    assert store.delete_user("user-1") is True
+    assert store.get_device("device-1") is None
+    assert "challenge-1" not in store._passkey_challenges
+
+def test_auth_store_migrates_legacy_plaintext_device_tokens(tmp_path: Path):
+    import json
+
+    store_path = tmp_path / "auth.json"
+    raw = {
+        "users": [], "verifications": [], "sessions": [],
+        "devices": [{
+            "device_code": "legacy-device-code",
+            "user_code": "ABCD-EFGH",
+            "status": "approved",
+            "user_id": "user-1",
+            "session_token": "legacy-plaintext-bearer-token",
+            "created_at": "2026-11-19T10:00:00+00:00",
+            "expires_at": "2026-11-19T10:05:00+00:00",
+        }],
+        "oauth_states": [], "passkey_challenges": [],
+    }
+    store_path.write_text(json.dumps(raw), encoding="utf-8")
+    store = AuthStore(store_path)
+
+    persisted = store_path.read_text(encoding="utf-8")
+    assert "legacy-plaintext-bearer-token" not in persisted
+    assert store.get_device("legacy-device-code") is None
+
+def test_auth_store_email_repair_preserves_sessions_and_pending_devices(tmp_path: Path):
+    import json
+    from datetime import timedelta
+    from app.auth.models import DeviceLoginRecord, SessionRecord, UserRecord, utcnow
+
+    store_path = tmp_path / "auth.json"
+    user = UserRecord(
+        id="user-1", first_name="Test", last_name="User", username="test_user",
+        email="•test@example.com", password_hash="unused",
+    )
+    expiry = utcnow() + timedelta(minutes=5)
+    raw = {
+        "users": [user.model_dump(mode="json")],
+        "verifications": [],
+        "sessions": [SessionRecord(
+            id="session-1", user_id="user-1", token_hash="hashed-token", expires_at=expiry
+        ).model_dump(mode="json")],
+        "devices": [DeviceLoginRecord(
+            device_code="pending-device", user_code="AAAA-BBBB", expires_at=expiry
+        ).model_dump(mode="json")],
+        "oauth_states": [], "passkey_challenges": [],
+    }
+    store_path.write_text(json.dumps(raw), encoding="utf-8")
+
+    store = AuthStore(store_path)
+    assert store.get_user("user-1").email == "test@example.com"
+    assert store.get_session("session-1") is not None
+    assert store.get_device("pending-device") is not None
+

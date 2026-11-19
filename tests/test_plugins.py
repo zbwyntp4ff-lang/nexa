@@ -189,3 +189,81 @@ def test_api_plugins_require_auth(tmp_path: Path):
     conn = client.post("/api/v1/plugins/vscode/connect", json={"permissions": ["files.read"]})
     assert conn.status_code == 401
     get_plugin_manager.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_user_plugin_connections_are_not_registered_globally_or_shared(mgr: PluginManager):
+    alice = await mgr.connect(
+        "vscode", user_id="alice", permissions=["files.read", "files.write"]
+    )
+    assert alice["enabled"] is True
+    assert "plugin_vscode" not in {tool.name for tool in mgr._registry.list()}
+    mgr.restore_connected_tools()
+    assert "plugin_vscode" not in {tool.name for tool in mgr._registry.list()}
+
+    bob = await mgr.connect(
+        "vscode", user_id="bob", permissions=["files.read", "files.write"]
+    )
+    assert bob["enabled"] is True
+
+    alice_ctx = mgr._context(mgr.adapter("vscode"), mgr._store.get("vscode", user_id="alice"))
+    bob_ctx = mgr._context(mgr.adapter("vscode"), mgr._store.get("vscode", user_id="bob"))
+    assert alice_ctx.workspace_root != bob_ctx.workspace_root
+
+    await mgr.disconnect("vscode", user_id="alice")
+    assert mgr._store.get("vscode", user_id="bob").enabled is True
+    assert "plugin_vscode" not in {tool.name for tool in mgr._registry.list()}
+
+
+def test_plugin_audit_and_workspace_deletion_are_user_scoped(mgr: PluginManager, tmp_path: Path):
+    import hashlib
+
+    mgr._audit.record(plugin_id="vscode", action="read", status="ok", user_id="alice")
+    mgr._audit.record(plugin_id="vscode", action="read", status="ok", user_id="bob")
+    alice_events = mgr.audit("vscode", user_id="alice")
+    assert len(alice_events) == 1
+    assert alice_events[0]["user_id"] == "alice"
+
+    alice_root = mgr._workspace_root / hashlib.sha256(b"alice").hexdigest()
+    alice_root.mkdir(parents=True)
+    (alice_root / "private.txt").write_text("alice data", encoding="utf-8")
+    assert mgr.delete_user_data("alice") == 0
+    assert not alice_root.exists()
+
+def test_crypto_reads_legacy_nexa1_secret():
+    from app.plugins.crypto import decrypt_secret
+
+    legacy = "TkVYQTEAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eH_DR8vu56kFpusuPJjcPTz2afbBKIxKBQUtkRDysd6B1FITKXpdJsrhU2_GeaTgNXGOsXA=="
+    assert decrypt_secret(legacy, b"k" * 32) == "legacy-plugin-token"
+
+
+def test_crypto_rejects_tampered_aes_gcm_payload():
+    import base64
+    import pytest
+    from app.plugins.crypto import decrypt_secret, encrypt_secret
+
+    token = encrypt_secret("plugin-secret", b"k" * 32)
+    blob = bytearray(base64.urlsafe_b64decode(token.encode("ascii")))
+    blob[-1] ^= 1
+    tampered = base64.urlsafe_b64encode(blob).decode("ascii")
+    with pytest.raises(ValueError, match="authentication failed"):
+        decrypt_secret(tampered, b"k" * 32)
+
+def test_corrupt_plugin_store_fails_closed(tmp_path: Path):
+    from app.plugins.store import PluginStore
+
+    store_path = tmp_path / "plugin_store.json"
+    store_path.write_text("{broken", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="Cannot load NEXA plugin store"):
+        PluginStore(store_path)
+
+
+def test_truncated_plugin_master_key_is_not_replaced(tmp_path: Path):
+    from app.plugins.crypto import load_or_create_master_key
+
+    key_path = tmp_path / "plugin.key"
+    key_path.write_bytes(b"short")
+    with pytest.raises(RuntimeError, match="corrupt or truncated"):
+        load_or_create_master_key(str(key_path))
+    assert key_path.read_bytes() == b"short"
+

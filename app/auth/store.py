@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 import threading
 from pathlib import Path
 
@@ -36,9 +38,18 @@ class AuthStore:
         if not self._path.exists():
             return
         try:
+            os.chmod(self._path, 0o600)
+        except OSError:
+            pass
+        try:
             raw = json.loads(self._path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return
+        except (json.JSONDecodeError, OSError) as exc:
+            # Never silently treat an unreadable/corrupt account database as
+            # an empty store: that makes every existing login look invalid
+            # and can overwrite the only copy on the next account write.
+            raise RuntimeError(
+                f"Cannot load NEXA auth store at {self._path}: {exc}"
+            ) from exc
         dirty = False
         for entry in raw.get("users", []):
             user = UserRecord.model_validate(entry)
@@ -54,16 +65,20 @@ class AuthStore:
             self._by_username[user.username.lower()] = user.id
             if user.oauth_provider and user.oauth_subject:
                 self._by_oauth[f"{user.oauth_provider}:{user.oauth_subject}"] = user.id
-        if dirty:
-            self._flush()
         for entry in raw.get("verifications", []):
             item = EmailVerificationRecord.model_validate(entry)
             self._verifications[item.id] = item
         for entry in raw.get("sessions", []):
             item = SessionRecord.model_validate(entry)
             self._sessions[item.id] = item
+        legacy_device_tokens = False
         for entry in raw.get("devices", []):
             item = DeviceLoginRecord.model_validate(entry)
+            if item.session_token:
+                # An approved device login cannot survive a server restart:
+                # discard legacy plaintext bearer tokens from disk.
+                legacy_device_tokens = True
+                continue
             self._devices[item.device_code] = item
         for entry in raw.get("oauth_states", []):
             item = OAuthStateRecord.model_validate(entry)
@@ -71,6 +86,8 @@ class AuthStore:
         for entry in raw.get("passkey_challenges", []):
             item = PasskeyChallengeRecord.model_validate(entry)
             self._passkey_challenges[item.challenge] = item
+        if dirty or legacy_device_tokens:
+            self._flush()
 
     def _flush(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -84,9 +101,24 @@ class AuthStore:
                 c.model_dump(mode="json") for c in self._passkey_challenges.values()
             ],
         }
-        tmp = self._path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-        tmp.replace(self._path)
+        encoded = json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=f".{self._path.name}.", suffix=".tmp", dir=self._path.parent
+        )
+        tmp = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(encoded)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp, self._path)
+            try:
+                os.chmod(self._path, 0o600)
+            except OSError:
+                pass
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
 
     # --- users ------------------------------------------------------------
     def save_user(self, user: UserRecord) -> UserRecord:
@@ -114,6 +146,14 @@ class AuthStore:
             }
             self._sessions = {
                 sid: s for sid, s in self._sessions.items() if s.user_id != user_id
+            }
+            self._devices = {
+                code: d for code, d in self._devices.items() if d.user_id != user_id
+            }
+            self._passkey_challenges = {
+                challenge: item
+                for challenge, item in self._passkey_challenges.items()
+                if item.user_id != user_id
             }
             self._flush()
             return True

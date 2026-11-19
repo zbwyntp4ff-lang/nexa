@@ -68,8 +68,6 @@ class RegisterResponse(BaseModel):
     resend_available_at: str
     ready: bool = False
     message: str = "Account created. Verify your email to activate it."
-    # Returned for desktop/Electron where cookie may not stick across localhost vs 127.0.0.1.
-    session_token: str | None = None
 
 
 class AuthStatusResponse(BaseModel):
@@ -97,8 +95,6 @@ class LoginResponse(BaseModel):
     user: UserPublic
     expires_at: str
     message: str = "Signed in."
-    # Returned for desktop/Electron where cookie may not stick across localhost vs 127.0.0.1.
-    session_token: str | None = None
 
 
 class MeResponse(BaseModel):

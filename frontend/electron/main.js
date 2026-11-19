@@ -10,11 +10,12 @@
 "use strict";
 const path = require("node:path");
 const { app, BrowserWindow, Menu, Tray, shell, ipcMain, dialog, session } = require("electron");
-const { BackendManager, DEFAULT_BACKEND_URL } = require("./backend");
+const { BackendManager, DEFAULT_BACKEND_URL, resolveDesktopStorageEnv, migrateLegacyData, normalizeLoopbackBackendUrl } = require("./backend");
 const { createLogger } = require("./log");
 const { startStaticServer } = require("./static-server");
 const FRONTEND_DEV_URL = "http://localhost:4820";
-const BACKEND_URL = process.env.NEXA_BACKEND_URL || DEFAULT_BACKEND_URL;
+const configuredBackendUrl = process.env.NEXA_BACKEND_URL || DEFAULT_BACKEND_URL;
+const BACKEND_URL = normalizeLoopbackBackendUrl(configuredBackendUrl);
 const NEXA_BG_COLOR = "#0b0b12"; // matches NEXA's black/purple theme (globals.css)
 let mainWindow = null;
 let tray = null;
@@ -131,7 +132,7 @@ function applyContentSecurityPolicy() {
         ...details.responseHeaders,
         "Content-Security-Policy": [
           "default-src 'self'; " +
-            "img-src 'self' data: blob: http: https:; " +
+            "img-src 'self' data: blob:; " +
             `connect-src ${connectSrc}; ` +
             "style-src 'self' 'unsafe-inline'; " +
             "script-src 'self' 'unsafe-inline'; " +
@@ -340,6 +341,33 @@ function showAboutDialog() {
     buttons: ["OK"],
   });
 }
+/**
+ * Keep packaged desktop accounts in Electron's per-user writable data
+ * directory, not under the install/resources directory. On first launch
+ * after this change, migrate the previous relative auth store if present.
+ */
+function prepareDesktopAuthStore() {
+  const fs = require("node:fs");
+  const userDataDir = app.getPath("userData");
+  const storageEnv = resolveDesktopStorageEnv(userDataDir, process.env);
+  const legacyRoot = app.isPackaged
+    ? path.join(process.resourcesPath, "backend")
+    : path.join(__dirname, "..", "..");
+  migrateLegacyData({
+    legacyRoot,
+    userDataDir,
+    onLog: (message) => logger && logger.write(message),
+  });
+  const target = storageEnv.AUTH_STORE_PATH;
+  if (fs.existsSync(target)) {
+    try {
+      fs.chmodSync(target, 0o600);
+    } catch {
+      // Windows ACLs are inherited from the per-user Electron data directory.
+    }
+  }
+  return storageEnv;
+}
 function createTray() {
   try {
     tray = new Tray(resolveIconPath());
@@ -406,7 +434,8 @@ function registerIpcHandlers() {
    */
   ipcMain.handle("nexa:open-path", async (event, payload) => {
     const filePath = payload && typeof payload.path === "string" ? payload.path : "";
-    const confirm = !!(payload && payload.confirm);
+    // Renderer-supplied flags are not trusted as authorization to bypass a native confirmation.
+    const confirm = false;
     if (!filePath || filePath.includes("\0")) {
       throw new Error("Rejected: invalid path.");
     }
@@ -508,6 +537,7 @@ if (!gotSingleInstanceLock) {
       return;
     }
     createTray();
+    const desktopStorageEnv = prepareDesktopAuthStore();
     backendManager = new BackendManager({
       url: BACKEND_URL,
       isPackaged: app.isPackaged,
@@ -515,6 +545,7 @@ if (!gotSingleInstanceLock) {
       electronDir: __dirname,
       onLog: (line) => logger.write(line),
       extraEnv: {
+        ...desktopStorageEnv,
         CORS_ALLOWED_ORIGINS: corsOriginsFor(appOrigin),
         // Prefer live Ollama when available; override via process env if set.
         AI_PROVIDER: process.env.AI_PROVIDER || "ollama",

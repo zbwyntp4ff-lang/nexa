@@ -11,6 +11,7 @@ const electronDir = path.join(path.dirname(fileURLToPath(import.meta.url)), ".."
 const packageJson = JSON.parse(fs.readFileSync(path.join(electronDir, "..", "package.json"), "utf8"));
 const preloadSource = fs.readFileSync(path.join(electronDir, "preload.js"), "utf8");
 const mainSource = fs.readFileSync(path.join(electronDir, "main.js"), "utf8");
+const apiSource = fs.readFileSync(path.join(electronDir, "..", "src", "lib", "api.ts"), "utf8");
 describe("electron-builder packaging config", () => {
   it("names the app NEXA and points main at electron/main.js", () => {
     expect(packageJson.main).toBe("electron/main.js");
@@ -61,5 +62,13 @@ describe("main process security posture", () => {
     const backendSource = fs.readFileSync(path.join(__dirname, "..", "backend.js"), "utf8");
     expect(backendSource).toContain("spawnedByUs");
     expect(backendSource).toContain("already reachable");
+  });
+});
+
+describe("Electron cookie origin", () => {
+  it("uses localhost for the API when the Electron UI is served from localhost", () => {
+    expect(apiSource).toContain('if (port === "48420") return "http://localhost:8420"');
+    expect(mainSource).toContain('return `http://localhost:${port}/`');
+    expect(mainSource).toContain("fs.chmodSync(target, 0o600)");
   });
 });
