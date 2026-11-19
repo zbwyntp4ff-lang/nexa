@@ -31,7 +31,7 @@ from pathlib import Path
 from app.attachments.chunking import chunk_text, select_relevant_chunks
 from app.attachments.models import AttachmentKind, AttachmentRecord, AttachmentStatus
 from app.attachments.sql_store import SqlAttachmentStore
-from app.db.engine import Database, get_database
+from app.db.engine import get_database
 from app.attachments.validation import validate_upload
 from app.config.settings import Settings, get_settings
 from app.core.logging_config import get_logger
