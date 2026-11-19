@@ -49,6 +49,9 @@ function probeBackend(baseUrl, timeoutMs = 1500) {
   });
 }
 /** Resolve the repo/backend working directory for dev vs. packaged mode. */
+function normalizeLoopbackBackendUrl(url) {
+  return String(url).replace(/^http:\/\/127\.0\.0\.1(?=:\\d|\/|$)/i, "http://localhost");
+}
 function resolveBackendCwd({ isPackaged, resourcesPath, electronDir }) {
   if (isPackaged) {
     return path.join(resourcesPath, "backend");
@@ -250,5 +253,6 @@ module.exports = {
   resolvePythonExecutable,
   resolveDesktopStorageEnv,
   migrateLegacyData,
+  normalizeLoopbackBackendUrl,
   DEFAULT_BACKEND_URL,
 };
