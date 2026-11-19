@@ -55,6 +55,10 @@ class PluginStore:
             self._states = {}
             return
         try:
+            try:
+                os.chmod(self._path, 0o600)
+            except OSError:
+                pass
             raw = json.loads(self._path.read_text(encoding="utf-8"))
             if not isinstance(raw, dict) or not isinstance(raw.get("plugins"), list):
                 raise ValueError("plugin store must contain a 'plugins' list")
