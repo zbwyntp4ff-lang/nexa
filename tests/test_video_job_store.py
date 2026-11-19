@@ -108,3 +108,18 @@ async def test_manifest_does_not_persist_motion_prompts_or_signed_provider_urls(
     assert restored.phase == "failed"
     assert restored.video_url is None
 
+def test_video_account_deletion_never_unlinks_remote_url_basename(tmp_path):
+    remote_named_file = tmp_path / "same-name.mp4"
+    remote_named_file.write_bytes(b"belongs to another local job")
+    store = VideoJobStore()
+    status = VideoJobStatus(
+        job_id="job-remote",
+        phase="ready",
+        progress=100,
+        video_url="https://provider.example/api/v1/video/files/same-name.mp4?sig=secret",
+    )
+    asyncio.run(store.create(status.job_id, status, user_id="user-a"))
+
+    assert store.delete_user_data("user-a", tmp_path) == 1
+    assert remote_named_file.exists()
+
