@@ -69,5 +69,6 @@ describe("Electron cookie origin", () => {
   it("uses localhost for the API when the Electron UI is served from localhost", () => {
     expect(apiSource).toContain('if (port === "48420") return "http://localhost:8420"');
     expect(mainSource).toContain('return `http://localhost:${port}/`');
+    expect(mainSource).toContain("fs.chmodSync(target, 0o600)");
   });
 });
