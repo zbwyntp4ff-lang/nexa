@@ -96,9 +96,20 @@ class VideoJobStore:
                 ) from exc
         self._storage_dir = resolved_dir
         self._manifest_path = manifest_path
+        self._jobs.clear()
         self._jobs.update(loaded)
         if manifest_path.exists():
             self._persist()
+        retained_files = {
+            Path(urlparse(job.status.video_url or "").path).name
+            for job in self._jobs.values()
+            if job.status.phase == "ready" and job.status.video_url
+        }
+        # Remove generated video files whose owner/job manifest was lost in a crash.
+        for extension in ("mp4", "webm", "mov"):
+            for candidate in resolved_dir.glob(f"*.{extension}"):
+                if candidate.name not in retained_files:
+                    candidate.unlink(missing_ok=True)
 
     def _persist(self) -> None:
         if self._manifest_path is None:
@@ -184,7 +195,11 @@ class VideoJobStore:
             resolved.unlink(missing_ok=True)
 
     async def create(self, job_id: str, status: VideoJobStatus, *, user_id: str | None = None) -> VideoJobStatus:
+        if status.job_id != job_id:
+            raise ValueError("video job id does not match status")
         async with self._lock:
+            if job_id in self._jobs:
+                raise ValueError("video job already exists")
             self._jobs[job_id] = _Job(status=status, user_id=user_id)
             self._persist()
         return status
