@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import os
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,13 +28,91 @@ class _Job:
 
 
 class VideoJobStore:
-    def __init__(self) -> None:
+    """Tracks jobs and persists owner/status metadata for restart-safe access."""
+
+    def __init__(self, storage_dir: Path | None = None) -> None:
         self._jobs: dict[str, _Job] = {}
         self._lock = asyncio.Lock()
+        self._storage_dir: Path | None = None
+        self._manifest_path: Path | None = None
+        if storage_dir is not None:
+            self.configure_storage(storage_dir)
+
+    def configure_storage(self, storage_dir: Path) -> None:
+        storage_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path = storage_dir / ".nexa_video_jobs.json"
+        if self._manifest_path == manifest_path:
+            return
+        self._storage_dir = storage_dir.resolve()
+        self._manifest_path = manifest_path
+        if manifest_path.exists():
+            try:
+                raw = json.loads(manifest_path.read_text(encoding="utf-8"))
+                if not isinstance(raw, list):
+                    raise ValueError("video job manifest must be a list")
+                for item in raw:
+                    if not isinstance(item, dict):
+                        raise ValueError("invalid video job manifest entry")
+                    status = VideoJobStatus.model_validate(item["status"])
+                    job_id = status.job_id
+                    if not job_id or job_id in self._jobs:
+                        raise ValueError("invalid or duplicate video job id")
+                    user_id = item.get("user_id")
+                    if user_id is not None and not isinstance(user_id, str):
+                        raise ValueError("invalid video job owner")
+                    if status.phase not in {"ready", "failed"}:
+                        status = status.model_copy(update={
+                            "phase": "failed",
+                            "progress": 100,
+                            "message": "Generation was interrupted by a server restart.",
+                            "error": "Generation was interrupted by a server restart.",
+                            "motion_plan": None,
+                        })
+                    self._jobs[job_id] = _Job(status=status, user_id=user_id)
+            except Exception as exc:
+                raise RuntimeError(
+                    "Video job manifest is invalid; refusing to overwrite it."
+                ) from exc
+            self._persist()
+
+    def _persist(self) -> None:
+        if self._manifest_path is None:
+            return
+        # Persist only operational metadata. User prompts, image descriptions,
+        # and provider error details are intentionally excluded.
+        entries = []
+        for job_id, job in self._jobs.items():
+            status = job.status.model_copy(update={"motion_plan": None, "error": None})
+            entries.append({
+                "user_id": job.user_id,
+                "status": status.model_dump(mode="json"),
+            })
+        temporary = self._manifest_path.with_name(self._manifest_path.name + ".tmp")
+        temporary.write_text(
+            json.dumps(entries, ensure_ascii=False, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, self._manifest_path)
+
+    def _delete_local_video(self, video_url: str | None) -> None:
+        if self._storage_dir is None or not video_url:
+            return
+        filename = Path(urlparse(video_url).path).name
+        if not filename:
+            return
+        candidate = self._storage_dir / filename
+        if candidate.is_symlink():
+            candidate.unlink(missing_ok=True)
+            return
+        resolved = candidate.resolve()
+        if resolved != self._storage_dir and self._storage_dir in resolved.parents and resolved.is_file():
+            resolved.unlink(missing_ok=True)
 
     async def create(self, job_id: str, status: VideoJobStatus, *, user_id: str | None = None) -> VideoJobStatus:
         async with self._lock:
             self._jobs[job_id] = _Job(status=status, user_id=user_id)
+            self._persist()
         return status
 
     async def update(self, job_id: str, **fields) -> VideoJobStatus:
@@ -41,6 +121,7 @@ class VideoJobStore:
             data = job.status.model_dump()
             data.update(fields)
             job.status = VideoJobStatus(**data)
+            self._persist()
             return job.status
 
     async def get(self, job_id: str, *, user_id: str | None = None, enforce: bool = False) -> VideoJobStatus | None:
@@ -98,6 +179,7 @@ class VideoJobStore:
             resolved = candidate.resolve()
             if resolved != root and root in resolved.parents and resolved.is_file():
                 resolved.unlink(missing_ok=True)
+        self._persist()
         return len(owned)
 
 
@@ -105,6 +187,11 @@ _STORE = VideoJobStore()
 
 
 def get_video_job_store() -> VideoJobStore:
+    from app.config.settings import get_settings
+    from app.core.paths import resolve_under_project_root
+
+    settings = get_settings()
+    _STORE.configure_storage(resolve_under_project_root(settings.video_storage_dir))
     return _STORE
 
 
