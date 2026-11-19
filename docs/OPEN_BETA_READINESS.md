@@ -38,7 +38,7 @@ This document separates **verified facts**, **automated checks**, **manual/stagi
 
 ### Still operational (not fully automated)
 - Invite-only vs fully open marketing policy
-- Edge rate limits (CDN/WAF) beyond in-process windows
+- Edge rate limits (CDN/WAF) beyond in-process windows — now a hard startup gate via TRUSTED_EDGE_RATE_LIMIT_ENABLED
 - Stripe live onboarding / legal entity
 - Manual Electron LAN/XSS probe
 - **Real staging deploy + SMTP mailbox + paid/named model credentials**
@@ -54,6 +54,9 @@ NEXA_PUBLIC_BETA=true
 ENVIRONMENT=production
 NEXA_STORAGE_MODE=persistent
 TOKENS_ENFORCE=true
+TRUSTED_EDGE_RATE_LIMIT_ENABLED=true  # only after CDN/WAF distributed limits are active
+API_RATE_LIMIT_PER_MINUTE=60
+REGISTER_RATE_LIMIT_PER_HOUR=20
 AUTH_SINGLE_USER=false
 AUTH_SKIP_EMAIL_VERIFICATION=false
 AUTH_COOKIE_SECURE=true
