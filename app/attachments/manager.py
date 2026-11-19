@@ -158,7 +158,7 @@ class AttachmentManager:
         filename = entry.get("filename")
         if not isinstance(filename, str) or Path(filename).name != filename:
             return None
-        if not filename.startswith(attachment_id + "."):
+        if not re.fullmatch(rf"{attachment_id}\\.[a-z0-9]{{1,10}}", filename):
             return None
         candidate = self._storage_dir / filename
         if candidate.is_symlink():
@@ -220,7 +220,11 @@ class AttachmentManager:
             temp_path = self._storage_dir / f"{attachment_id}.{extension}"
             temp_path.write_bytes(raw)
             stored.temp_path = temp_path
-            self._record_manifest(record, temp_path)
+            try:
+                self._record_manifest(record, temp_path)
+            except Exception:
+                self._delete_temp(stored)
+                raise
             if kind == AttachmentKind.IMAGE:
                 stored.record.status = AttachmentStatus.READY
                 logger.info("attachment ready id=%s kind=image format=%s size=%d", attachment_id, extension, len(raw))
