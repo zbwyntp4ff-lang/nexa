@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import threading
 from pathlib import Path
 
@@ -74,8 +75,10 @@ class PluginStore:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"plugins": [s.model_dump() for s in self._states.values()]}
         encoded = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
-        tmp = self._path.with_suffix(self._path.suffix + ".tmp")
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=f".{self._path.name}.", suffix=".tmp", dir=self._path.parent
+        )
+        tmp = Path(tmp_name)
         try:
             with os.fdopen(fd, "wb") as handle:
                 handle.write(encoded)
