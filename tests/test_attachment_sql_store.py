@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pytest
 
+from app.models.errors import AttachmentNotFoundError
+
 from app.attachments.manager import AttachmentManager
 from app.attachments.sql_store import SqlAttachmentStore
 from app.db.engine import Database
@@ -39,7 +41,7 @@ async def test_document_metadata_and_text_survive_manager_restart(tmp_path):
     assert restarted.get_text(record.id, user_id="user-a") == "Durable NEXA attachment content."
     assert restarted.list(user_id="user-a")[0].id == record.id
     assert restarted.document_context([record.id], "durable attachment", user_id="user-a")
-    with pytest.raises(Exception):
+    with pytest.raises(AttachmentNotFoundError):
         restarted.get(record.id, user_id="user-b")
 
 
@@ -53,5 +55,6 @@ async def test_account_wipe_removes_sql_attachment_content(tmp_path):
     assert manager.delete_user("user-a") == 1
     restarted = _manager(tmp_path, db)
     assert restarted.list(user_id="user-a") == []
-    assert restarted.get_text(record.id, user_id="user-a") if False else True
+    with pytest.raises(AttachmentNotFoundError):
+        restarted.get(record.id, user_id="user-a")
     assert len(restarted.list(user_id="user-b")) == 1
