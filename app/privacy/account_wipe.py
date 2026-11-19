@@ -22,6 +22,7 @@ class AccountWipeReport(BaseModel):
     conversations_deleted: int = 0
     plugins_cleared: int = 0
     workflows_cleared: int = 0
+    video_jobs_deleted: int = 0
     profile_deleted: bool = False
     tokens_cleared: bool = False
     sessions_revoked: int = 0
@@ -78,6 +79,16 @@ def wipe_user_account(
             report.details.append(f"attachments_cleared={cleared}")
     except Exception as exc:  # noqa: BLE001
         report.details.append(f"attachments: {exc}")
+    try:
+        from app.config.settings import get_settings
+        from app.video_generation.service import get_video_job_store
+
+        settings = get_settings()
+        report.video_jobs_deleted = get_video_job_store().delete_user_data(
+            user_id, settings.video_storage_dir
+        )
+    except Exception as exc:  # noqa: BLE001
+        report.details.append(f"video_jobs: {exc}")
     if profiles is not None:
         try:
             profiles.delete(user_id)
