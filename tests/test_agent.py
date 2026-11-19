@@ -282,3 +282,26 @@ async def test_agent_rejects_empty_task_description(tmp_path):
     agent = _build_agent(tmp_path)
     with pytest.raises(AgentTaskError):
         await agent.run(AgentTask(description="   "))
+
+async def test_agent_model_context_is_restored_when_run_raises(tmp_path):
+    from app.agent.agent import _RUN_MODEL_PROVIDER, _RUN_MODEL_ID, _RUN_MODEL_DISPLAY
+
+    class _ExplodingPlanner(Planner):
+        def plan_next(self, state: AgentState) -> PlannedAction:
+            raise RuntimeError("simulated planner failure")
+
+    agent = _build_agent(tmp_path, planner=_ExplodingPlanner())
+    provider_token = _RUN_MODEL_PROVIDER.set("outer-provider")
+    model_token = _RUN_MODEL_ID.set("outer-model")
+    display_token = _RUN_MODEL_DISPLAY.set("outer-display")
+    try:
+        with pytest.raises(RuntimeError, match="simulated planner failure"):
+            await agent.run(AgentTask(description="trigger failure"))
+        assert _RUN_MODEL_PROVIDER.get() == "outer-provider"
+        assert _RUN_MODEL_ID.get() == "outer-model"
+        assert _RUN_MODEL_DISPLAY.get() == "outer-display"
+    finally:
+        _RUN_MODEL_PROVIDER.reset(provider_token)
+        _RUN_MODEL_ID.reset(model_token)
+        _RUN_MODEL_DISPLAY.reset(display_token)
+
