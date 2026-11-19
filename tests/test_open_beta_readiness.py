@@ -26,6 +26,8 @@ def _public_beta_env(monkeypatch, **extra: str) -> Settings:
     monkeypatch.setenv("NEXA_STORAGE_MODE", "persistent")
     monkeypatch.setenv("TOKENS_ENFORCE", "true")
     monkeypatch.setenv("TRUSTED_EDGE_RATE_LIMIT_ENABLED", "true")
+    monkeypatch.setenv("API_RATE_LIMIT_PER_MINUTE", "120")
+    monkeypatch.setenv("REGISTER_RATE_LIMIT_PER_HOUR", "10")
     monkeypatch.setenv("AUTH_SKIP_EMAIL_VERIFICATION", "false")
     monkeypatch.setenv("AUTH_COOKIE_SECURE", "true")
     monkeypatch.setenv("AUTH_SINGLE_USER", "false")
