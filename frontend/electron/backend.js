@@ -71,6 +71,32 @@ function resolvePythonExecutable(backendCwd, platform = process.platform) {
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+/**
+ * Place every writable desktop store under Electron's per-user data directory.
+ * Packaged app resources are read-only on macOS and Windows.
+ */
+function resolveDesktopStorageEnv(userDataDir, env = process.env) {
+  const dataDir = path.join(userDataDir, "data");
+  const dataFile = (name) => path.join(dataDir, name);
+  const sqlitePath = dataFile("nexa.db").replace(/\\/g, "/");
+  return {
+    DATABASE_URL: env.DATABASE_URL || `sqlite:///${sqlitePath}`,
+    AUTH_STORE_PATH: dataFile("auth_store.json"),
+    MEMORY_STORE_PATH: dataFile("memory_store.json"),
+    AGENT_WORKSPACE_DIR: path.join(userDataDir, "agent_workspace"),
+    PLUGIN_STORE_PATH: dataFile("plugin_store.json"),
+    PLUGIN_WORKSPACE_DIR: dataFile("plugin_workspaces"),
+    PLUGIN_KEY_PATH: dataFile("plugin.key"),
+    ATTACHMENT_STORAGE_DIR: dataFile("attachments_tmp"),
+    KNOWLEDGE_STORE_PATH: dataFile("knowledge_vectors.json"),
+    KNOWLEDGE_DOCUMENTS_PATH: dataFile("knowledge_documents.json"),
+    VIDEO_STORAGE_DIR: dataFile("videos"),
+    OAUTH_CREDENTIALS_DIR: dataFile("oauth"),
+    BILLING_STORE_PATH: dataFile("billing_store.json"),
+    TOKEN_STORE_PATH: dataFile("token_store.json"),
+    PROFILE_STORE_PATH: dataFile("profile_store.json"),
+  };
+}
 class BackendManager {
   constructor({ url = DEFAULT_BACKEND_URL, isPackaged, resourcesPath, electronDir, onLog, extraEnv } = {}) {
     this.url = url;
@@ -150,5 +176,6 @@ module.exports = {
   probeBackend,
   resolveBackendCwd,
   resolvePythonExecutable,
+  resolveDesktopStorageEnv,
   DEFAULT_BACKEND_URL,
 };
