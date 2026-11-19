@@ -123,6 +123,14 @@ def build_provider_registry(settings: Settings) -> ProviderRegistry:
     registry.register("gemini", gemini_factory)
     registry.register("openrouter", openrouter_factory)
     registry.register("ollama", ollama_factory)
+    def hexa_factory(model_id: str) -> AIProvider:
+        from app.providers.hexa_provider import Hexa45Provider
+        return Hexa45Provider(
+            base_url=settings.hexa_model_url,
+            model=model_id or settings.hexa_model_name,
+            timeout_seconds=timeout,
+        )
+    registry.register("hexa", hexa_factory)
     registry.register("local", local_factory)
     registry.register("mock", mock_factory)
     return registry
@@ -248,6 +256,7 @@ class ModelGateway:
             "ollama": self._models._ollama_reachable is not False,
             "local": self._models._ollama_reachable is not False,
             "mock": self._allow_mock_cards(),
+            "hexa": bool(self._settings.hexa_model_url),
         }.get(provider, False)
         reason = None
         availability = "available" if configured else "unavailable"
