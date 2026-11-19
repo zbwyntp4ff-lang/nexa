@@ -4,10 +4,6 @@
 FROM node:22-bookworm AS frontend-build
 WORKDIR /frontend
 COPY frontend/package.json frontend/package-lock.json ./
-# The package postinstall applies the reviewed picomatch patch. Copy its inputs
-# before npm ci so clean Docker builds can execute the lifecycle script.
-COPY frontend/scripts/ ./scripts/
-COPY frontend/patches/ ./patches/
 RUN npm ci
 COPY frontend/ ./
 # Same-origin API (Caddy proxies /api and /health to uvicorn).
