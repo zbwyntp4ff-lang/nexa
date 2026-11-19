@@ -55,3 +55,31 @@ This is a **template, not an active deployment**. Before use:
 6. Run `nginx -t`, reload Nginx, then test 429 responses from separate client IPs and verify the application receives the expected scheme/host.
 
 The sample thresholds are conservative starting points, not load-tested production values. Tune them after observing legitimate traffic and AI/SSE request patterns. This config does not enable multi-worker support: keep one NEXA API process and one app instance until shared transactional storage and distributed queues/limits exist.
+
+
+### Caddy → Uvicorn client IP trust (required)
+
+Nginx limits requests by its real client address, but NEXA also has in-process
+API/auth limiters that use the ASGI client address. When Nginx proxies to Caddy,
+Caddy must trust **only the exact Nginx source IP** so its normalized
+`X-Forwarded-For` reaches Uvicorn. Otherwise every user can appear to the app
+as the same proxy and share one in-process rate-limit bucket.
+
+Add the following to the global options at the top of `deploy/Caddyfile`, after
+replacing the placeholder with the address Caddy actually sees for Nginx (often
+the Docker bridge gateway when Nginx runs on the host):
+
+```caddyfile
+{
+    servers {
+        trusted_proxies static <NGINX_SOURCE_IP>/32
+        trusted_proxies_strict
+    }
+}
+```
+
+Use `/128` for one IPv6 address. Do not copy the placeholder literally. Avoid
+`private_ranges` unless the proxy network is isolated and only trusted proxies
+can connect to Caddy. If Cloudflare is in front of Nginx, configure Nginx Real IP
+from Cloudflare's official ranges first; Caddy should trust the Nginx hop, not
+arbitrary client-supplied forwarding headers.
