@@ -21,7 +21,7 @@ const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
-const DEFAULT_BACKEND_URL = "http://127.0.0.1:8420";
+const DEFAULT_BACKEND_URL = "http://localhost:8420";
 const HEALTH_PATH = "/health";
 const MAX_STARTUP_WAIT_MS = 20_000;
 const STARTUP_POLL_INTERVAL_MS = 300;
@@ -202,8 +202,8 @@ class BackendManager {
     // explicit opt-in (misconfiguration must not expose auth cookies / agent).
     const allowLan = String(process.env.NEXA_ELECTRON_ALLOW_LAN_BIND || "").trim() === "1";
     const bindHost = allowLan
-      ? (hostname === "0.0.0.0" || hostname === "::" ? "0.0.0.0" : hostname || "127.0.0.1")
-      : "127.0.0.1";
+      ? (hostname === "0.0.0.0" || hostname === "::" ? "0.0.0.0" : hostname || "localhost")
+      : (hostname === "localhost" ? "localhost" : "127.0.0.1");
     this.onLog(`Starting backend: ${python} -m uvicorn app.main:app --host ${bindHost} --port ${port} (cwd=${cwd})`);
     try {
       this.process = spawn(
