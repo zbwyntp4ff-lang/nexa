@@ -524,3 +524,52 @@ def test_oauth_missing_email_verified_claim_is_unverified():
 
     assert _as_bool(None, default=False) is False
 
+def test_device_session_token_is_not_persisted_to_auth_store(tmp_path: Path):
+    from datetime import timedelta
+    from app.auth.models import DeviceLoginRecord, utcnow
+
+    store_path = tmp_path / "auth.json"
+    store = AuthStore(store_path)
+    secret_token = "device-session-token-must-stay-in-memory"
+    store.save_device(
+        DeviceLoginRecord(
+            device_code="device-code",
+            user_code="ABCD-EFGH",
+            status="approved",
+            user_id="user-1",
+            session_token=secret_token,
+            expires_at=utcnow() + timedelta(minutes=5),
+        )
+    )
+    assert secret_token not in store_path.read_text(encoding="utf-8")
+    reloaded = AuthStore(store_path)
+    assert reloaded.get_device("device-code").session_token is None
+
+
+def test_delete_user_removes_device_and_passkey_challenges(tmp_path: Path):
+    from datetime import timedelta
+    from app.auth.models import (
+        DeviceLoginRecord,
+        PasskeyChallengeRecord,
+        UserRecord,
+        utcnow,
+    )
+
+    store = AuthStore(tmp_path / "auth.json")
+    user = UserRecord(
+        id="user-1", first_name="Test", last_name="User", username="test_user",
+        email="test@example.com", password_hash="unused",
+    )
+    store.save_user(user)
+    expiry = utcnow() + timedelta(minutes=5)
+    store.save_device(DeviceLoginRecord(
+        device_code="device-1", user_code="AAAA-BBBB", user_id="user-1", expires_at=expiry
+    ))
+    store.save_passkey_challenge(PasskeyChallengeRecord(
+        challenge="challenge-1", user_id="user-1", expires_at=expiry
+    ))
+
+    assert store.delete_user("user-1") is True
+    assert store.get_device("device-1") is None
+    assert "challenge-1" not in store._passkey_challenges
+
