@@ -77,3 +77,34 @@ def test_corrupt_video_manifest_fails_closed(tmp_path):
     (tmp_path / ".nexa_video_jobs.json").write_text("{not-json", encoding="utf-8")
     with pytest.raises(RuntimeError, match="refusing to overwrite"):
         VideoJobStore(tmp_path)
+
+@pytest.mark.asyncio
+async def test_manifest_does_not_persist_motion_prompts_or_signed_provider_urls(tmp_path):
+    store = VideoJobStore(tmp_path)
+    status = VideoJobStatus(
+        job_id="job-remote",
+        phase="ready",
+        progress=100,
+        message="contains private provider details",
+        video_url="https://provider.example/video.mp4?signature=secret-token",
+        motion_plan={
+            "scene_summary": "private image description",
+            "motion_prompt": "private user prompt",
+            "conservative": True,
+            "source": "user",
+        },
+    )
+    await store.create(status.job_id, status, user_id="user-a")
+
+    manifest = (tmp_path / ".nexa_video_jobs.json").read_text(encoding="utf-8")
+    assert "secret-token" not in manifest
+    assert "private user prompt" not in manifest
+    assert "private image description" not in manifest
+    assert "private provider details" not in manifest
+
+    restarted = VideoJobStore(tmp_path)
+    restored = await restarted.get(status.job_id, user_id="user-a", enforce=True)
+    assert restored is not None
+    assert restored.phase == "failed"
+    assert restored.video_url is None
+
