@@ -97,12 +97,13 @@ class AttachmentManager:
                 continue
             image_path: Path | None = None
             try:
+                if metadata_path.is_symlink():
+                    raise ValueError("metadata manifest must not be a symlink")
                 record = AttachmentRecord.model_validate_json(
                     metadata_path.read_text(encoding="utf-8")
                 )
                 if (
-                    metadata_path.is_symlink()
-                    or record.id != attachment_id
+                    record.id != attachment_id
                     or record.kind != AttachmentKind.IMAGE
                     or record.status != AttachmentStatus.READY
                     or record.format not in IMAGE_EXTENSIONS
