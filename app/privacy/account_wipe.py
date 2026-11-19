@@ -3,6 +3,7 @@
 Does not claim deletion from backups, CDN caches, or provider logs.
 """
 from __future__ import annotations
+
 from pydantic import BaseModel, Field
 
 from app.auth.store import AuthStore
