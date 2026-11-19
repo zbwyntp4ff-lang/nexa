@@ -73,8 +73,14 @@ class AuthStore:
         for entry in raw.get("sessions", []):
             item = SessionRecord.model_validate(entry)
             self._sessions[item.id] = item
+        legacy_device_tokens = False
         for entry in raw.get("devices", []):
             item = DeviceLoginRecord.model_validate(entry)
+            if item.session_token:
+                # An approved device login cannot survive a server restart:
+                # discard legacy plaintext bearer tokens from disk.
+                legacy_device_tokens = True
+                continue
             self._devices[item.device_code] = item
         for entry in raw.get("oauth_states", []):
             item = OAuthStateRecord.model_validate(entry)
@@ -82,6 +88,8 @@ class AuthStore:
         for entry in raw.get("passkey_challenges", []):
             item = PasskeyChallengeRecord.model_validate(entry)
             self._passkey_challenges[item.challenge] = item
+        if legacy_device_tokens:
+            self._flush()
 
     def _flush(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
