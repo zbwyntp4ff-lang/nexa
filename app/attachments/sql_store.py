@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from typing import Any
 
 from app.attachments.models import AttachmentRecord
@@ -35,7 +34,7 @@ class SqlAttachmentStore:
               chunks_json = excluded.chunks_json,
               storage_filename = excluded.storage_filename,
               expires_at = excluded.expires_at
-            WHERE attachments.user_id IS excluded.user_id
+            WHERE attachments.user_id = excluded.user_id OR (attachments.user_id IS NULL AND excluded.user_id IS NULL)
             """,
             (
                 record.id,
