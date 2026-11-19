@@ -1,4 +1,4 @@
-# EXAMPLE ONLY — external Nginx edge in front of the NEXA Docker/Caddy container.
+# EXAMPLE ONLY — Nginx 1.25.1+ edge in front of the NEXA Docker/Caddy container.
 # Install as an nginx server config after replacing the hostname and certificate paths.
 # NEXA's container must NOT be directly exposed to the Internet; bind Caddy to localhost.
 #
