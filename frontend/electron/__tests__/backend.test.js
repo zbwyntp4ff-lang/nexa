@@ -18,6 +18,7 @@ import {
   resolveDesktopStorageEnv,
   migrateLegacyData,
   DEFAULT_BACKEND_URL,
+  normalizeLoopbackBackendUrl,
 } from "../backend.js";
 describe("resolveBackendCwd", () => {
   it("resolves the repo root two levels above electron/ in dev mode", () => {
@@ -157,5 +158,16 @@ describe("migrateLegacyData", () => {
     expect(fs.readFileSync(path.join(targetData, "videos", "clip.mp4"), "utf8")).toBe("video");
     expect(fs.readFileSync(path.join(targetData, "agent_workspace", "note.txt"), "utf8")).toBe("workspace");
     expect(messages).toContain("Migrated desktop data: data/plugin.key");
+  });
+});
+
+
+describe("normalizeLoopbackBackendUrl", () => {
+  it("maps IPv4 loopback to localhost for browser cookie consistency", () => {
+    expect(normalizeLoopbackBackendUrl("http://127.0.0.1:8420")).toBe("http://localhost:8420");
+  });
+  it("leaves non-loopback and HTTPS backend URLs unchanged", () => {
+    expect(normalizeLoopbackBackendUrl("https://api.example.com")).toBe("https://api.example.com");
+    expect(normalizeLoopbackBackendUrl("http://192.168.1.5:8420")).toBe("http://192.168.1.5:8420");
   });
 });
