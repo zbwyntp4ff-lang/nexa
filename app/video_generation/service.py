@@ -41,11 +41,13 @@ class VideoJobStore:
 
     def configure_storage(self, storage_dir: Path) -> None:
         storage_dir.mkdir(parents=True, exist_ok=True)
-        manifest_path = storage_dir / ".nexa_video_jobs.json"
+        resolved_dir = storage_dir.resolve()
+        manifest_path = resolved_dir / ".nexa_video_jobs.json"
         if self._manifest_path == manifest_path:
             return
-        self._storage_dir = storage_dir.resolve()
-        self._manifest_path = manifest_path
+        loaded: dict[str, _Job] = {}
+        if manifest_path.is_symlink():
+            raise RuntimeError("Video job manifest must not be a symlink.")
         if manifest_path.exists():
             try:
                 raw = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -56,14 +58,14 @@ class VideoJobStore:
                         raise ValueError("invalid video job manifest entry")
                     status = VideoJobStatus.model_validate(item["status"])
                     job_id = status.job_id
-                    if not job_id or job_id in self._jobs:
+                    if not job_id or job_id in loaded:
                         raise ValueError("invalid or duplicate video job id")
                     user_id = item.get("user_id")
                     if user_id is not None and not isinstance(user_id, str):
                         raise ValueError("invalid video job owner")
                     if status.phase == "ready":
                         filename = Path(urlparse(status.video_url or "").path).name
-                        local_path = self._storage_dir / filename if filename else None
+                        local_path = resolved_dir / filename if filename else None
                         if (
                             not status.video_url
                             or not re.fullmatch(r"[A-Za-z0-9._-]{1,255}", filename)
@@ -86,11 +88,15 @@ class VideoJobStore:
                             "message": "Generation was interrupted by a server restart.",
                             "video_url": None,
                         })
-                    self._jobs[job_id] = _Job(status=status, user_id=user_id)
+                    loaded[job_id] = _Job(status=status, user_id=user_id)
             except Exception as exc:
                 raise RuntimeError(
                     "Video job manifest is invalid; refusing to overwrite it."
                 ) from exc
+        self._storage_dir = resolved_dir
+        self._manifest_path = manifest_path
+        self._jobs.update(loaded)
+        if manifest_path.exists():
             self._persist()
 
     def _persist(self) -> None:
