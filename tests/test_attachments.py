@@ -540,3 +540,43 @@ async def test_attachment_content_isolated_between_users(tmp_path):
     assert manager.has_images([image.id], user_id="bob") is False
     assert manager.image_payloads([image.id], user_id="bob") == []
     assert len(manager.image_payloads([image.id], user_id="alice")) == 1
+
+async def test_attachment_manifest_survives_restart_for_account_deletion(tmp_path):
+    storage_dir = tmp_path / "attachments_tmp"
+    manager = _manager(tmp_path)
+    record = await manager.upload("photo.png", _PNG_BYTES, user_id="user-a")
+    image_path = storage_dir / f"{record.id}.png"
+    manifest_path = storage_dir / ".ownership.json"
+    assert image_path.is_file()
+    assert manifest_path.is_file()
+
+    restarted_manager = _manager(tmp_path)
+    assert restarted_manager.list(user_id="user-a") == []
+    assert restarted_manager.delete_user("user-a") == 1
+    assert not image_path.exists()
+    assert '"user-a"' not in manifest_path.read_text(encoding="utf-8")
+
+
+async def test_attachment_manifest_ttl_cleanup_survives_restart(tmp_path):
+    storage_dir = tmp_path / "attachments_tmp"
+    manager = _manager(tmp_path, ttl_seconds=0.01)
+    record = await manager.upload("photo.png", _PNG_BYTES, user_id="user-a")
+    image_path = storage_dir / f"{record.id}.png"
+    assert image_path.is_file()
+
+    time.sleep(0.03)
+    restarted_manager = _manager(tmp_path)
+    assert restarted_manager.cleanup_expired() == 1
+    assert not image_path.exists()
+    assert not (storage_dir / ".ownership.json").exists() or (
+        f'"{record.id}"' not in (storage_dir / ".ownership.json").read_text(encoding="utf-8")
+    )
+
+
+async def test_document_upload_does_not_leave_ownership_manifest_entry(tmp_path):
+    manager = _manager(tmp_path)
+    record = await manager.upload("notes.txt", b"private document text", user_id="user-a")
+    manifest_path = tmp_path / "attachments_tmp" / ".ownership.json"
+    assert record.status == AttachmentStatus.READY
+    assert not manifest_path.exists() or f'"{record.id}"' not in manifest_path.read_text(encoding="utf-8")
+
