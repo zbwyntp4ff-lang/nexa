@@ -14,7 +14,8 @@ const { BackendManager, DEFAULT_BACKEND_URL, resolveDesktopStorageEnv, migrateLe
 const { createLogger } = require("./log");
 const { startStaticServer } = require("./static-server");
 const FRONTEND_DEV_URL = "http://localhost:4820";
-const BACKEND_URL = process.env.NEXA_BACKEND_URL || DEFAULT_BACKEND_URL;
+const configuredBackendUrl = process.env.NEXA_BACKEND_URL || DEFAULT_BACKEND_URL;
+const BACKEND_URL = configuredBackendUrl.replace(/^http:\/\/127\\.0\\.0\\.1(?=:)/, "http://localhost");
 const NEXA_BG_COLOR = "#0b0b12"; // matches NEXA's black/purple theme (globals.css)
 let mainWindow = null;
 let tray = null;
