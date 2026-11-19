@@ -149,10 +149,16 @@ _ATTACHMENT_CLEANUP_INTERVAL_SECONDS = 60.0
 async def _attachment_cleanup_loop() -> None:
     """Periodically sweep expired temp attachments even without new requests."""
     manager = get_attachment_manager()
+    from app.core.paths import resolve_under_project_root
+    from app.video_generation.service import get_video_job_store
+
+    video_store = get_video_job_store()
+    video_storage_dir = resolve_under_project_root(settings.video_storage_dir)
     while True:
         await asyncio.sleep(_ATTACHMENT_CLEANUP_INTERVAL_SECONDS)
         try:
             manager.cleanup_expired()
+            video_store.cleanup_expired(video_storage_dir)
         except Exception:  # noqa: BLE001 - a cleanup hiccup must never crash the app
             logger.exception("attachment cleanup sweep failed")
 async def _warm_inference() -> None:
