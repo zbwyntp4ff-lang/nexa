@@ -43,6 +43,21 @@ class CookieCSRFMiddleware(BaseHTTPMiddleware):
                 parsed = urlsplit(referer)
                 if parsed.scheme and parsed.netloc:
                     origin = f"{parsed.scheme}://{parsed.netloc}"
+            else:
+                # Modern browsers send Origin on unsafe requests. For older
+                # clients without Origin/Referer, honor Fetch Metadata when
+                # available and reject cross-site/same-site ambiguous writes;
+                # non-browser API clients without Fetch Metadata remain usable.
+                fetch_site = (request.headers.get("sec-fetch-site") or "").lower()
+                if fetch_site in {"cross-site", "same-site"}:
+                    return JSONResponse(
+                        status_code=403,
+                        content={
+                            "error": "csrf_origin_rejected",
+                            "message": "Cross-site cookie-authenticated actions are not allowed.",
+                        },
+                    )
+                return await call_next(request)
 
         allowed = {
             value.strip().rstrip("/")
