@@ -45,7 +45,8 @@ The host sets `PORT`. Caddy listens on `:{$PORT:8080}`. Platforms (Render, Railw
 | Conversations + SQL memory | `DATABASE_URL` (SQLite file or Postgres) | **Volume or managed DB** |
 | Tokens, profiles, billing, plugins, knowledge | JSON under `/app/data` | **Volume** |
 | Agent / build artifacts | `AGENT_WORKSPACE_DIR` | Volume recommended |
-| Attachments | TTL / temp dir | Not durable by design |
+| Image attachments | Image bytes + owner metadata sidecars under `ATTACHMENT_STORAGE_DIR` | Yes until TTL when volume is mounted; metadata/signature are checked on restore |
+| Document attachments | Extracted text/chunks in memory; source file removed after parsing | No; intentionally transient across process restart |
 | Workflows | In-memory | **No** — keep `WORKFLOWS_ENABLED=false` |
 | Rate-limit counters | In-process | Reset on restart |
 
