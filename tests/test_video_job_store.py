@@ -123,3 +123,9 @@ def test_video_account_deletion_never_unlinks_remote_url_basename(tmp_path):
     assert store.delete_user_data("user-a", tmp_path) == 1
     assert remote_named_file.exists()
 
+def test_video_store_startup_removes_orphaned_generated_files(tmp_path):
+    orphan = tmp_path / "orphaned.mp4"
+    orphan.write_bytes(b"orphan")
+    VideoJobStore(tmp_path)
+    assert not orphan.exists()
+
