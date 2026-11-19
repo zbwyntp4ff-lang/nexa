@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -65,7 +66,9 @@ class VideoJobStore:
                         local_path = self._storage_dir / filename if filename else None
                         if (
                             not status.video_url
-                            or not urlparse(status.video_url).path.startswith("/api/v1/video/files/")
+                            or not re.fullmatch(r"[A-Za-z0-9._-]{1,255}", filename)
+                            or filename in {".", ".."}
+                            or urlparse(status.video_url).path != f"/api/v1/video/files/{filename}"
                             or local_path is None
                             or not local_path.is_file()
                             or local_path.is_symlink()
@@ -107,7 +110,8 @@ class VideoJobStore:
             filename = Path(parsed.path).name
             is_local_result = (
                 parsed.path.startswith("/api/v1/video/files/")
-                and filename
+                and bool(re.fullmatch(r"[A-Za-z0-9._-]{1,255}", filename))
+                and filename not in {".", ".."}
                 and parsed.path == f"/api/v1/video/files/{filename}"
                 and not parsed.query
                 and not parsed.fragment
