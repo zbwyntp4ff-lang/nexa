@@ -518,3 +518,9 @@ def test_ipconfig_output_uses_portable_text_encoding(monkeypatch):
 
     monkeypatch.setattr(subprocess, "check_output", fake_check_output)
     assert _ipv4s_from_ipconfig() == ["192.168.1.25"]
+
+def test_oauth_missing_email_verified_claim_is_unverified():
+    from app.auth.oauth import _as_bool
+
+    assert _as_bool(None, default=False) is False
+
