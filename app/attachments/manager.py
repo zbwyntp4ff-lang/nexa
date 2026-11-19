@@ -118,7 +118,10 @@ class AttachmentManager:
         with self._manifest_lock:
             fd, temp_name = tempfile.mkstemp(prefix=".ownership-", dir=self._storage_dir)
             try:
-                os.fchmod(fd, 0o600)
+                try:
+                    os.fchmod(fd, 0o600)
+                except (AttributeError, OSError):
+                    pass
                 with os.fdopen(fd, "w", encoding="utf-8") as stream:
                     json.dump(manifest, stream, ensure_ascii=False, separators=(",", ":"))
                     stream.flush()
@@ -177,11 +180,13 @@ class AttachmentManager:
         if stored and stored.temp_path:
             stored.temp_path.unlink(missing_ok=True)
         manifest = self._read_manifest()
+        existed = attachment_id in manifest
         entry = manifest.pop(attachment_id, None)
-        if entry:
+        if isinstance(entry, dict):
             candidate = self._safe_manifest_file(attachment_id, entry)
             if candidate:
                 candidate.unlink(missing_ok=True)
+        if existed:
             self._write_manifest(manifest)
     # --- upload pipeline -------------------------------------------------------
     def _owned(self, stored: _Stored, user_id: str | None) -> bool:
