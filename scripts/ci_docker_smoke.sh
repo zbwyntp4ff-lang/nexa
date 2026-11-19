@@ -28,6 +28,8 @@ ENV_ARGS=(
   -e "ENVIRONMENT=production"
   -e "NEXA_STORAGE_MODE=persistent"
   -e "TOKENS_ENFORCE=true"
+  # Isolated CI smoke only: no public traffic reaches this local container.
+  -e "TRUSTED_EDGE_RATE_LIMIT_ENABLED=true"
   -e "AUTH_SINGLE_USER=false"
   -e "AUTH_SKIP_EMAIL_VERIFICATION=false"
   -e "AUTH_COOKIE_SECURE=true"
