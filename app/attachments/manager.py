@@ -82,15 +82,20 @@ class AttachmentManager:
         """Persist ownership metadata for image bytes, never document contents."""
         metadata_path = self._metadata_path(stored.record.id)
         temporary_path = metadata_path.with_name(metadata_path.name + ".tmp")
-        temporary_path.write_text(
-            stored.record.model_dump_json(), encoding="utf-8"
-        )
-        os.chmod(temporary_path, 0o600)
-        os.replace(temporary_path, metadata_path)
+        try:
+            temporary_path.write_text(
+                stored.record.model_dump_json(), encoding="utf-8"
+            )
+            os.chmod(temporary_path, 0o600)
+            os.replace(temporary_path, metadata_path)
+        finally:
+            temporary_path.unlink(missing_ok=True)
 
     def _restore_persisted_images(self) -> None:
         """Restore unexpired image records and remove unowned/orphaned image files."""
         restored: set[str] = set()
+        for temporary_path in self._storage_dir.glob("*.meta.json.tmp"):
+            temporary_path.unlink(missing_ok=True)
         for metadata_path in self._storage_dir.glob("*.meta.json"):
             attachment_id = metadata_path.name[:-10]
             if not re.fullmatch(r"[0-9a-f]{32}", attachment_id):
@@ -191,8 +196,8 @@ class AttachmentManager:
         try:
             temp_path = self._storage_dir / f"{attachment_id}.{extension}"
             temp_path.write_bytes(raw)
-            os.chmod(temp_path, 0o600)
             stored.temp_path = temp_path
+            os.chmod(temp_path, 0o600)
             if kind == AttachmentKind.IMAGE:
                 stored.record.status = AttachmentStatus.READY
                 self._persist_image(stored)
@@ -204,6 +209,9 @@ class AttachmentManager:
         except TimeoutError:
             self._fail(stored, AttachmentProcessingTimeoutError().message)
             self._delete_temp(stored)
+        except OSError:
+            self._discard(attachment_id)
+            raise
         finally:
             async with self._active_lock:
                 self._active_jobs -= 1
