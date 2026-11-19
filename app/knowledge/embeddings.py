@@ -11,8 +11,8 @@ from __future__ import annotations
 import hashlib
 import math
 import re
-from abc import ABC, abstractmethod
 import httpx
+from abc import ABC, abstractmethod
 _WORD_PATTERN = re.compile(r"[\w]+", re.UNICODE)
 DEFAULT_DIMENSIONS = 256
 class EmbeddingProvider(ABC):
@@ -67,8 +67,10 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
     def __init__(self, base_url: str, model: str, timeout_seconds: float = 20.0) -> None:
         if not base_url.strip() or not model.strip():
             raise ValueError("Embedding base URL and model are required.")
-        self.base_url = base_url.rstrip("/")
-        self.model = model
+        self.base_url = base_url.strip().rstrip("/")
+        self.model = model.strip()
+        if timeout_seconds <= 0:
+            raise ValueError("Embedding timeout must be greater than zero.")
         self.timeout_seconds = timeout_seconds
         self.dimensions = 0  # discovered from the first valid response
 
@@ -117,10 +119,9 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
 
 
 class EmbeddingProviderFactory:
-    """Selects an :class:`EmbeddingProvider`. Only ``local`` is implemented today.
-    A future remote provider (e.g. an API-based embedding model) would be
-    added here the same way :class:`app.providers.factory.ProviderFactory`
-    adds AI providers - never called unless explicitly configured, and never
+    """Select an embedding backend; local remains the offline default.
+
+    Remote providers are only called when explicitly configured and are never
     required for the Knowledge Base to work locally.
     """
     @staticmethod
