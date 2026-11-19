@@ -202,6 +202,10 @@ class Settings(BaseSettings):
     knowledge_indexing_timeout_seconds: float = Field(
         default=20.0, alias="KNOWLEDGE_INDEXING_TIMEOUT_SECONDS"
     )
+    knowledge_embedding_provider: str = Field(default="local", alias="KNOWLEDGE_EMBEDDING_PROVIDER")
+    knowledge_embedding_model: str = Field(default="nomic-embed-text", alias="KNOWLEDGE_EMBEDDING_MODEL")
+    knowledge_embedding_base_url: str = Field(default="http://127.0.0.1:11434", alias="KNOWLEDGE_EMBEDDING_BASE_URL")
+    knowledge_embedding_timeout_seconds: float = Field(default=20.0, alias="KNOWLEDGE_EMBEDDING_TIMEOUT_SECONDS")
     knowledge_embedding_dimensions: int = Field(
         default=256, alias="KNOWLEDGE_EMBEDDING_DIMENSIONS"
     )
