@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 import threading
 from pathlib import Path
 
@@ -35,6 +37,10 @@ class AuthStore:
     def _load(self) -> None:
         if not self._path.exists():
             return
+        try:
+            os.chmod(self._path, 0o600)
+        except OSError:
+            pass
         try:
             raw = json.loads(self._path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError) as exc:
@@ -89,9 +95,24 @@ class AuthStore:
                 c.model_dump(mode="json") for c in self._passkey_challenges.values()
             ],
         }
-        tmp = self._path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-        tmp.replace(self._path)
+        encoded = json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=f".{self._path.name}.", suffix=".tmp", dir=self._path.parent
+        )
+        tmp = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(encoded)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp, self._path)
+            try:
+                os.chmod(self._path, 0o600)
+            except OSError:
+                pass
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
 
     # --- users ------------------------------------------------------------
     def save_user(self, user: UserRecord) -> UserRecord:
