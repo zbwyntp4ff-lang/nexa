@@ -94,6 +94,7 @@ def test_workflow_approval_admin_guard_rejects_non_owner():
 
 
 def test_workflow_approval_admin_guard_requires_auth_when_enforced():
+    from types import SimpleNamespace
     from fastapi import HTTPException
     from app.api.routes.workflow import require_workflow_admin
 
