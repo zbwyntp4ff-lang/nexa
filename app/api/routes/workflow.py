@@ -10,9 +10,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.api.deps import get_orchestrator, get_settings
+from app.api.deps import get_auth_service, get_orchestrator, get_settings
 from app.api.security_deps import require_user_when_enforced
 from app.auth.models import UserRecord
+from app.auth.service import AuthService
 from app.config.settings import Settings
 from app.models.errors import FeatureDisabledError
 from app.orchestrator.models import (
@@ -59,6 +60,20 @@ def _require_workflows(settings: Settings) -> None:
         )
 
 
+def require_workflow_admin(
+    user: Annotated[UserRecord | None, Depends(require_user_when_enforced)],
+    auth: Annotated[AuthService, Depends(get_auth_service)],
+    settings: Settings = Depends(get_settings),
+) -> None:
+    """Protect the shared in-memory approval queue from cross-user access."""
+    if user is None:
+        if settings.tokens_enforce:
+            raise HTTPException(status_code=401, detail="Authentication required.")
+        return
+    if not auth.is_owner(user):
+        raise HTTPException(status_code=403, detail="Only the NEXA owner can manage workflow approvals.")
+
+
 @router.post("/workflow", response_model=WorkflowResponse)
 async def run_workflow(
     request: WorkflowRunRequest,
@@ -101,7 +116,7 @@ async def get_workflow(
     raise HTTPException(status_code=404, detail="Workflow persistence is not implemented yet.")
 
 
-@router.get("/workflow/{task_id}/approvals", response_model=list[ApprovalRequest])
+@router.get("/workflow/{task_id}/approvals", response_model=list[ApprovalRequest], dependencies=[Depends(require_workflow_admin)])
 async def get_pending_approvals(
     task_id: str,
     orchestrator=Depends(get_orchestrator),
@@ -112,7 +127,7 @@ async def get_pending_approvals(
     return orchestrator.get_pending_approvals()
 
 
-@router.post("/workflow/{task_id}/approve", response_model=WorkflowResponse)
+@router.post("/workflow/{task_id}/approve", response_model=WorkflowResponse, dependencies=[Depends(require_workflow_admin)])
 async def resolve_approval(
     task_id: str,
     request: ApprovalResponse,
