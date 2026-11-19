@@ -69,3 +69,6 @@ data. Review provenance, consent, license, and quality before training.
 4. Fine-tune only after the dataset and evaluation set are reviewed.
 5. Compare the fine-tuned checkpoint against the baseline and retain it only
    if it improves measured quality without regressions.
+
+
+See [HEXA knowledge and reasoning architecture](HEXA_KNOWLEDGE_ARCHITECTURE.md) for semantic retrieval, domain corpus, math/code isolation, and evaluation milestones.
