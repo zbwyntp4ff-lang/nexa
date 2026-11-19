@@ -104,3 +104,36 @@ def test_workflow_approval_admin_guard_requires_auth_when_enforced():
         require_workflow_admin(user=None, auth=auth, settings=settings)
     assert exc.value.status_code == 401
 
+@pytest.mark.asyncio
+async def test_video_job_user_deletion_removes_only_owned_files(tmp_path):
+    from app.video_generation.models import VideoJobStatus
+    from app.video_generation.service import VideoJobStore
+
+    store = VideoJobStore()
+    alice_file = tmp_path / "alice.mp4"
+    bob_file = tmp_path / "bob.mp4"
+    alice_file.write_bytes(b"alice video")
+    bob_file.write_bytes(b"bob video")
+    await store.create(
+        "alice-job",
+        VideoJobStatus(
+            job_id="alice-job", phase="ready", progress=100,
+            video_url="/api/v1/video/files/alice.mp4",
+        ),
+        user_id="alice",
+    )
+    await store.create(
+        "bob-job",
+        VideoJobStatus(
+            job_id="bob-job", phase="ready", progress=100,
+            video_url="/api/v1/video/files/bob.mp4",
+        ),
+        user_id="bob",
+    )
+
+    assert store.delete_user_data("alice", tmp_path) == 1
+    assert not alice_file.exists()
+    assert bob_file.exists()
+    assert await store.get("alice-job", user_id="alice") is None
+    assert (await store.get("bob-job", user_id="bob")) is not None
+
