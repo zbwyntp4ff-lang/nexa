@@ -33,5 +33,5 @@ Render Free has **no** persistent disk → `NEXA_STORAGE_MODE=ephemeral` only.
 - Image attachments persist only their bounded public metadata and ownership manifest; raw image bytes stay in the dedicated attachment directory. Expired, invalid, signature-mismatched, and orphaned image files are removed when the manager starts or runs TTL cleanup.
 - Document attachments are deliberately transient: extracted text/chunks remain in process memory, and raw source files are deleted after parsing. Re-upload after a process restart is required.
 - Video job manifests store the owner, safe status fields, provider/model labels, and only a validated local video URL. Motion prompts, image descriptions, provider error details, and signed remote URLs are excluded.
-- A job that was active during a restart is marked failed rather than pretending it resumed. Account deletion removes manifest entries and the user's tracked local video files.
+- A job that was active during a restart is marked failed rather than pretending it resumed. Account deletion removes manifest entries and the user's tracked local video files. Startup also removes untracked orphaned generated video files.
 - These JSON manifests are designed for the documented single-process deployment. They are not a distributed transaction store and do not make multiple replicas safe.
