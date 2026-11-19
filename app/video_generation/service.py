@@ -157,8 +157,11 @@ class VideoJobStore:
         os.chmod(temporary, 0o600)
         os.replace(temporary, self._manifest_path)
 
-    def _delete_local_video(self, video_url: str | None) -> None:
-        if self._storage_dir is None or not video_url:
+    def _delete_local_video(
+        self, video_url: str | None, storage_dir: Path | None = None
+    ) -> None:
+        root = storage_dir.resolve() if storage_dir is not None else self._storage_dir
+        if root is None or not video_url:
             return
         parsed = urlparse(video_url)
         filename = Path(parsed.path).name
@@ -172,12 +175,12 @@ class VideoJobStore:
             or filename in {".", ".."}
         ):
             return
-        candidate = self._storage_dir / filename
+        candidate = root / filename
         if candidate.is_symlink():
             candidate.unlink(missing_ok=True)
             return
         resolved = candidate.resolve()
-        if resolved != self._storage_dir and self._storage_dir in resolved.parents and resolved.is_file():
+        if resolved != root and root in resolved.parents and resolved.is_file():
             resolved.unlink(missing_ok=True)
 
     async def create(self, job_id: str, status: VideoJobStatus, *, user_id: str | None = None) -> VideoJobStatus:
@@ -238,7 +241,7 @@ class VideoJobStore:
             self._jobs.pop(job_id, None)
             if job.task is not None and not job.task.done():
                 job.task.cancel()
-            self._delete_local_video(job.status.video_url)
+            self._delete_local_video(job.status.video_url, storage_dir)
         self._persist()
         return len(owned)
 
