@@ -7,6 +7,8 @@
 #   real_ip_header CF-Connecting-IP;
 #   real_ip_recursive on;
 # Never trust CF-Connecting-IP / X-Forwarded-For from arbitrary sources.
+# Also configure Caddy's trusted_proxies with ONLY the exact Nginx source IP;
+# otherwise the app's in-process per-IP limiters will see one shared proxy IP.
 
 limit_req_zone $binary_remote_addr zone=nexa_api:20m rate=120r/m;
 limit_req_zone $binary_remote_addr zone=nexa_login:10m rate=5r/m;
