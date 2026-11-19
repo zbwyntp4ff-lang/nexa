@@ -5,6 +5,7 @@ Multi-tenant: states are keyed by ``(user_id, plugin_id)``.
 from __future__ import annotations
 
 import json
+import os
 import threading
 from pathlib import Path
 
@@ -49,28 +50,42 @@ class PluginStore:
             return len(to_remove)
 
     def _load(self) -> None:
-        if not self._path.is_file():
+        if not self._path.exists():
             self._states = {}
             return
         try:
             raw = json.loads(self._path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            self._states = {}
-            return
-        items = raw.get("plugins") if isinstance(raw, dict) else None
-        out: dict[str, PluginState] = {}
-        if isinstance(items, list):
-            for item in items:
+            if not isinstance(raw, dict) or not isinstance(raw.get("plugins"), list):
+                raise ValueError("plugin store must contain a 'plugins' list")
+            out: dict[str, PluginState] = {}
+            for index, item in enumerate(raw["plugins"]):
                 try:
                     state = PluginState.model_validate(item)
-                    out[_key(state.user_id, state.plugin_id)] = state
-                except Exception:  # noqa: BLE001
-                    continue
+                except Exception as exc:  # noqa: BLE001
+                    raise ValueError(f"invalid plugin entry at index {index}: {exc}") from exc
+                out[_key(state.user_id, state.plugin_id)] = state
+        except Exception as exc:  # noqa: BLE001
+            # Never turn a corrupt credential store into an empty one; a later
+            # save would overwrite the only copy of encrypted plugin secrets.
+            raise RuntimeError(f"Cannot load NEXA plugin store at {self._path}: {exc}") from exc
         self._states = out
 
     def _flush(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"plugins": [s.model_dump() for s in self._states.values()]}
+        encoded = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
         tmp = self._path.with_suffix(self._path.suffix + ".tmp")
-        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(self._path)
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(encoded)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp, self._path)
+            try:
+                os.chmod(self._path, 0o600)
+            except OSError:
+                pass
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
