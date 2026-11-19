@@ -71,6 +71,7 @@ class VideoJobStore:
                             or not re.fullmatch(r"[A-Za-z0-9._-]{1,255}", filename)
                             or filename in {".", ".."}
                             or urlparse(status.video_url).path != f"/api/v1/video/files/{filename}"
+                            or status.video_url != f"/api/v1/video/files/{filename}"
                             or local_path is None
                             or not local_path.is_file()
                             or local_path.is_symlink()
@@ -119,6 +120,7 @@ class VideoJobStore:
                 and bool(re.fullmatch(r"[A-Za-z0-9._-]{1,255}", filename))
                 and filename not in {".", ".."}
                 and parsed.path == f"/api/v1/video/files/{filename}"
+                and video_url == f"/api/v1/video/files/{filename}"
                 and not parsed.query
                 and not parsed.fragment
             )
@@ -158,8 +160,17 @@ class VideoJobStore:
     def _delete_local_video(self, video_url: str | None) -> None:
         if self._storage_dir is None or not video_url:
             return
-        filename = Path(urlparse(video_url).path).name
-        if not filename:
+        parsed = urlparse(video_url)
+        filename = Path(parsed.path).name
+        if (
+            parsed.scheme
+            or parsed.netloc
+            or parsed.query
+            or parsed.fragment
+            or parsed.path != f"/api/v1/video/files/{filename}"
+            or not re.fullmatch(r"[A-Za-z0-9._-]{1,255}", filename)
+            or filename in {".", ".."}
+        ):
             return
         candidate = self._storage_dir / filename
         if candidate.is_symlink():
@@ -223,24 +234,14 @@ class VideoJobStore:
             for job_id, job in self._jobs.items()
             if job.user_id == user_id
         ]
-        root = storage_dir.resolve()
         for job_id, job in owned:
             self._jobs.pop(job_id, None)
             if job.task is not None and not job.task.done():
                 job.task.cancel()
-            video_url = job.status.video_url or ""
-            filename = Path(urlparse(video_url).path).name
-            if not filename:
-                continue
-            candidate = root / filename
-            if candidate.is_symlink():
-                candidate.unlink(missing_ok=True)
-                continue
-            resolved = candidate.resolve()
-            if resolved != root and root in resolved.parents and resolved.is_file():
-                resolved.unlink(missing_ok=True)
+            self._delete_local_video(job.status.video_url)
         self._persist()
         return len(owned)
+
 
 
 _STORE = VideoJobStore()
