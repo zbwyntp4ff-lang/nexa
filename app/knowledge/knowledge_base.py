@@ -121,7 +121,13 @@ def build_knowledge_base(settings: Settings) -> KnowledgeBase:
         overlap=settings.knowledge_chunk_overlap_chars,
         max_chunks=settings.knowledge_max_chunks_per_document,
     )
-    embeddings = EmbeddingProviderFactory.create(dimensions=settings.knowledge_embedding_dimensions)
+    embeddings = EmbeddingProviderFactory.create(
+        name=settings.knowledge_embedding_provider,
+        dimensions=settings.knowledge_embedding_dimensions,
+        base_url=settings.knowledge_embedding_base_url,
+        model=settings.knowledge_embedding_model,
+        timeout_seconds=settings.knowledge_embedding_timeout_seconds,
+    )
     vector_store = LocalVectorStore(resolve_under_project_root(settings.knowledge_store_path))
     document_store = DocumentStore(resolve_under_project_root(settings.knowledge_documents_path))
     desktop_root = resolve_under_project_root(settings.agent_workspace_dir)
