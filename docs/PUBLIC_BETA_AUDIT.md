@@ -3,17 +3,19 @@
 **Дата обновления:** 19 ноября 2026 года  
 **Основная ветка:** `main`  
 **Последнее объединение:** PR #5, commit `0d180f2e798eba1b49b6f226473ba73fb7448d7d`  
-**Продолжение работ:** PR #28 — <https://github.com/zbwyntp4ff-lang/nexa/pull/28>, пока открыт и не объединён.
+**Продолжение работ:** PR #28 — <https://github.com/zbwyntp4ff-lang/nexa/pull/28>, открыт и не объединён.\n**Проверенный head PR #28:** `3082f4c007ee8b4fe76497e8f1736954a1dd3757`.
 
 ## Текущий статус
 
 PR #5 объединён в `main`. Его Python, Electron, frontend, npm/pip audit и Docker build/smoke проверки прошли на проверенных коммитах до объединения.
 
-PR #28 добавляет долговечные ownership manifests для image attachments и video jobs. На момент этого обновления CI PR #28:
-- Python tests — успешно;
-- Electron IPC/packaging — успешно;
-- Frontend tests/build и production npm audit — успешно;
-- Docker build/smoke — выполняется.
+PR #28 добавляет долговечные ownership manifests для image attachments и video jobs, а также пример внешнего Nginx edge. CI на проверенном head:
+- Python tests — **287 passed, 8 skipped, 1 deselected**;
+- Python dependency audit — **0 известных уязвимостей**;
+- Electron IPC/packaging — успешно; npm audit — **0 уязвимостей**;
+- Frontend tests и production build — успешно;
+- Полный npm audit и production npm audit — **0 уязвимостей**;
+- Docker build/smoke — ещё выполняется.
 
 Пока PR #28 не объединён, его изменения не входят в `main`.
 
