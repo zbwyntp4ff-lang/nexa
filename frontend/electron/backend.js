@@ -71,6 +71,78 @@ function resolvePythonExecutable(backendCwd, platform = process.platform) {
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+const LEGACY_DATA_MIGRATIONS = [
+  ["data/nexa.db", "nexa.db"],
+  ["data/auth_store.json", "auth_store.json"],
+  ["data/memory_store.json", "memory_store.json"],
+  ["agent_workspace", "agent_workspace"],
+  ["data/plugin_store.json", "plugin_store.json"],
+  ["data/plugin_workspaces", "plugin_workspaces"],
+  ["data/plugin.key", "plugin.key"],
+  ["data/attachments_tmp", "attachments_tmp"],
+  ["data/knowledge_vectors.json", "knowledge_vectors.json"],
+  ["data/knowledge_documents.json", "knowledge_documents.json"],
+  ["data/videos", "videos"],
+  ["data/oauth", "oauth"],
+  ["data/billing_store.json", "billing_store.json"],
+  ["data/token_store.json", "token_store.json"],
+  ["data/profile_store.json", "profile_store.json"],
+];
+
+/** Migrate legacy writable data out of read-only packaged resources once. */
+function migrateLegacyData({ legacyRoot, userDataDir, onLog = () => {} }) {
+  const dataDir = path.join(userDataDir, "data");
+  fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+  try {
+    fs.chmodSync(dataDir, 0o700);
+  } catch {
+    // Windows ACLs are inherited from the per-user Electron data directory.
+  }
+
+  for (const [legacyRelative, targetRelative] of LEGACY_DATA_MIGRATIONS) {
+    const source = path.join(legacyRoot, legacyRelative);
+    const target = path.join(dataDir, targetRelative);
+    if (fs.existsSync(target) || !fs.existsSync(source)) continue;
+
+    const sourceStat = fs.lstatSync(source);
+    if (sourceStat.isSymbolicLink()) {
+      onLog(`Skipped symlink during desktop data migration: ${legacyRelative}`);
+      continue;
+    }
+
+    const parent = path.dirname(target);
+    fs.mkdirSync(parent, { recursive: true, mode: 0o700 });
+    const temp = `${target}.migration-${process.pid}-${Date.now()}`;
+    try {
+      if (sourceStat.isDirectory()) {
+        fs.cpSync(source, temp, {
+          recursive: true,
+          filter: (candidate) => {
+            try {
+              return !fs.lstatSync(candidate).isSymbolicLink();
+            } catch {
+              return false;
+            }
+          },
+        });
+      } else if (sourceStat.isFile()) {
+        fs.copyFileSync(source, temp, fs.constants.COPYFILE_EXCL);
+      } else {
+        continue;
+      }
+      if (fs.existsSync(target)) {
+        fs.rmSync(temp, { recursive: true, force: true });
+        continue;
+      }
+      fs.renameSync(temp, target);
+      onLog(`Migrated desktop data: ${legacyRelative}`);
+    } catch (error) {
+      fs.rmSync(temp, { recursive: true, force: true });
+      throw error;
+    }
+  }
+  return dataDir;
+}
 /**
  * Place every writable desktop store under Electron's per-user data directory.
  * Packaged app resources are read-only on macOS and Windows.
@@ -177,5 +249,6 @@ module.exports = {
   resolveBackendCwd,
   resolvePythonExecutable,
   resolveDesktopStorageEnv,
+  migrateLegacyData,
   DEFAULT_BACKEND_URL,
 };
