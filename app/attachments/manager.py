@@ -158,7 +158,7 @@ class AttachmentManager:
         filename = entry.get("filename")
         if not isinstance(filename, str) or Path(filename).name != filename:
             return None
-        if not re.fullmatch(rf"{attachment_id}\\.[a-z0-9]{{1,10}}", filename):
+        if not re.fullmatch(rf"{attachment_id}\.[a-z0-9]{{1,10}}", filename):
             return None
         candidate = self._storage_dir / filename
         if candidate.is_symlink():
