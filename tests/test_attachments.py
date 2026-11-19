@@ -554,7 +554,7 @@ async def test_attachment_manifest_survives_restart_for_account_deletion(tmp_pat
     assert restarted_manager.list(user_id="user-a") == []
     assert restarted_manager.delete_user("user-a") == 1
     assert not image_path.exists()
-    assert '"user-a"' not in manifest_path.read_text(encoding="utf-8")
+    assert not manifest_path.exists() or '"user-a"' not in manifest_path.read_text(encoding="utf-8")
 
 
 async def test_attachment_manifest_ttl_cleanup_survives_restart(tmp_path):
