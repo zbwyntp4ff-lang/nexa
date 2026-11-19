@@ -106,6 +106,8 @@ jobs:
             frontend/npm-audit-production.json
           if-no-files-found: ignore
           retention-days: 7
+      - name: Enforce full npm dependency audit
+        run: npm audit
       - run: npx vitest run electron/__tests__/packaging.test.js
 
   frontend-validation:
