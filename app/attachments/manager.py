@@ -18,6 +18,11 @@ Design notes (security / privacy, per Part 8 spec):
 """
 from __future__ import annotations
 import asyncio
+import json
+import os
+import re
+import tempfile
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -60,6 +65,8 @@ class AttachmentManager:
     ) -> None:
         self._storage_dir = storage_dir
         self._storage_dir.mkdir(parents=True, exist_ok=True)
+        self._manifest_path = self._storage_dir / ".ownership.json"
+        self._manifest_lock = threading.RLock()
         self._processor = document_processor
         self._max_size_bytes = max_size_bytes
         self.max_attachments_per_message = max_attachments_per_message
@@ -74,20 +81,108 @@ class AttachmentManager:
     def cleanup_expired(self) -> int:
         """Delete expired attachments (temp files + in-memory record). Returns count removed."""
         now = time.time()
-        expired = [
+        expired = {
             attachment_id
             for attachment_id, stored in self._records.items()
             if stored.record.expires_at is not None and stored.record.expires_at.timestamp() < now
-        ]
+        }
+        manifest = self._read_manifest()
+        for attachment_id, entry in manifest.items():
+            try:
+                if float(entry["expires_at"]) < now:
+                    expired.add(attachment_id)
+            except (KeyError, TypeError, ValueError):
+                # A malformed entry is not trusted as a filesystem path.
+                continue
         for attachment_id in expired:
             self._discard(attachment_id)
         if expired:
             logger.info("attachments cleanup removed=%d", len(expired))
         return len(expired)
+    def _read_manifest(self) -> dict[str, dict]:
+        with self._manifest_lock:
+            if not self._manifest_path.exists():
+                return {}
+            try:
+                raw = json.loads(self._manifest_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise RuntimeError("Attachment ownership manifest is unreadable; refusing unsafe cleanup.") from exc
+            if not isinstance(raw, dict):
+                raise RuntimeError("Attachment ownership manifest has an invalid format.")
+            return {
+                key: value for key, value in raw.items()
+                if isinstance(key, str) and isinstance(value, dict)
+            }
+
+    def _write_manifest(self, manifest: dict[str, dict]) -> None:
+        with self._manifest_lock:
+            fd, temp_name = tempfile.mkstemp(prefix=".ownership-", dir=self._storage_dir)
+            try:
+                os.fchmod(fd, 0o600)
+                with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                    json.dump(manifest, stream, ensure_ascii=False, separators=(",", ":"))
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(temp_name, self._manifest_path)
+                try:
+                    os.chmod(self._manifest_path, 0o600)
+                except OSError:
+                    pass
+            finally:
+                if os.path.exists(temp_name):
+                    os.unlink(temp_name)
+
+    def _record_manifest(self, record: AttachmentRecord, temp_path: Path) -> None:
+        if not record.user_id:
+            return
+        filename = temp_path.name
+        if filename != f"{record.id}.{record.format}":
+            raise RuntimeError("Unexpected attachment storage filename.")
+        manifest = self._read_manifest()
+        manifest[record.id] = {
+            "user_id": record.user_id,
+            "filename": filename,
+            "expires_at": record.expires_at.timestamp() if record.expires_at else 0,
+        }
+        self._write_manifest(manifest)
+
+    def _forget_manifest(self, attachment_id: str) -> None:
+        manifest = self._read_manifest()
+        if attachment_id in manifest:
+            manifest.pop(attachment_id, None)
+            self._write_manifest(manifest)
+
+    def _safe_manifest_file(self, attachment_id: str, entry: dict) -> Path | None:
+        if not re.fullmatch(r"[0-9a-f]{32}", attachment_id):
+            return None
+        filename = entry.get("filename")
+        if not isinstance(filename, str) or Path(filename).name != filename:
+            return None
+        if not filename.startswith(attachment_id + "."):
+            return None
+        candidate = self._storage_dir / filename
+        if candidate.is_symlink():
+            return candidate
+        try:
+            resolved = candidate.resolve()
+            root = self._storage_dir.resolve()
+        except OSError:
+            return None
+        if resolved.parent != root:
+            return None
+        return candidate
+
     def _discard(self, attachment_id: str) -> None:
         stored = self._records.pop(attachment_id, None)
-        if stored and stored.temp_path and stored.temp_path.exists():
+        if stored and stored.temp_path:
             stored.temp_path.unlink(missing_ok=True)
+        manifest = self._read_manifest()
+        entry = manifest.pop(attachment_id, None)
+        if entry:
+            candidate = self._safe_manifest_file(attachment_id, entry)
+            if candidate:
+                candidate.unlink(missing_ok=True)
+            self._write_manifest(manifest)
     # --- upload pipeline -------------------------------------------------------
     def _owned(self, stored: _Stored, user_id: str | None) -> bool:
         """True when ``user_id`` may access the record (None = no ownership filter)."""
@@ -125,6 +220,7 @@ class AttachmentManager:
             temp_path = self._storage_dir / f"{attachment_id}.{extension}"
             temp_path.write_bytes(raw)
             stored.temp_path = temp_path
+            self._record_manifest(record, temp_path)
             if kind == AttachmentKind.IMAGE:
                 stored.record.status = AttachmentStatus.READY
                 logger.info("attachment ready id=%s kind=image format=%s size=%d", attachment_id, extension, len(raw))
@@ -165,11 +261,11 @@ class AttachmentManager:
             stored.record.char_count,
             stored.record.chunk_count,
         )
-    @staticmethod
-    def _delete_temp(stored: _Stored) -> None:
+    def _delete_temp(self, stored: _Stored) -> None:
         if stored.temp_path and stored.temp_path.exists():
             stored.temp_path.unlink(missing_ok=True)
         stored.temp_path = None
+        self._forget_manifest(stored.record.id)
     def _fail(self, stored: _Stored, message: str) -> None:
         stored.record.status = AttachmentStatus.FAILED
         stored.record.error = message
@@ -207,14 +303,17 @@ class AttachmentManager:
 
     def delete_user(self, user_id: str) -> int:
         """Remove all attachments owned by ``user_id``. Returns count deleted."""
-        ids = [
-            aid
-            for aid, stored in self._records.items()
+        manifest = self._read_manifest()
+        persisted_ids = {
+            aid for aid, entry in manifest.items() if entry.get("user_id") == user_id
+        }
+        memory_ids = {
+            aid for aid, stored in self._records.items()
             if stored.record.user_id == user_id
-        ]
-        for aid in ids:
+        }
+        for aid in persisted_ids | memory_ids:
             self._discard(aid)
-        return len(ids)
+        return len(persisted_ids | memory_ids)
 
     def resolve_ids(
         self, attachment_ids: list[str], *, user_id: str | None = None
