@@ -573,3 +573,27 @@ def test_delete_user_removes_device_and_passkey_challenges(tmp_path: Path):
     assert store.get_device("device-1") is None
     assert "challenge-1" not in store._passkey_challenges
 
+def test_auth_store_migrates_legacy_plaintext_device_tokens(tmp_path: Path):
+    import json
+
+    store_path = tmp_path / "auth.json"
+    raw = {
+        "users": [], "verifications": [], "sessions": [],
+        "devices": [{
+            "device_code": "legacy-device-code",
+            "user_code": "ABCD-EFGH",
+            "status": "approved",
+            "user_id": "user-1",
+            "session_token": "legacy-plaintext-bearer-token",
+            "created_at": "2026-11-19T10:00:00+00:00",
+            "expires_at": "2026-11-19T10:05:00+00:00",
+        }],
+        "oauth_states": [], "passkey_challenges": [],
+    }
+    store_path.write_text(json.dumps(raw), encoding="utf-8")
+    store = AuthStore(store_path)
+
+    persisted = store_path.read_text(encoding="utf-8")
+    assert "legacy-plaintext-bearer-token" not in persisted
+    assert store.get_device("legacy-device-code") is None
+
