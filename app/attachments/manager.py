@@ -28,7 +28,7 @@ from functools import lru_cache
 from pathlib import Path
 from app.attachments.chunking import chunk_text, select_relevant_chunks
 from app.attachments.models import AttachmentKind, AttachmentRecord, AttachmentStatus
-from app.attachments.validation import IMAGE_EXTENSIONS, validate_upload
+from app.attachments.validation import IMAGE_EXTENSIONS, validate_upload, verify_signature
 from app.config.settings import Settings, get_settings
 from app.core.logging_config import get_logger
 from app.core.paths import resolve_under_project_root
@@ -101,7 +101,8 @@ class AttachmentManager:
                     metadata_path.read_text(encoding="utf-8")
                 )
                 if (
-                    record.id != attachment_id
+                    metadata_path.is_symlink()
+                    or record.id != attachment_id
                     or record.kind != AttachmentKind.IMAGE
                     or record.status != AttachmentStatus.READY
                     or record.format not in IMAGE_EXTENSIONS
@@ -113,6 +114,8 @@ class AttachmentManager:
                     image_path.is_symlink()
                     or not image_path.is_file()
                     or image_path.stat().st_size != record.size_bytes
+                    or record.size_bytes > self._max_size_bytes
+                    or not verify_signature(record.format, image_path.read_bytes())
                     or record.expires_at.timestamp() <= time.time()
                 ):
                     raise ValueError("missing, expired, or invalid persisted image")
