@@ -33,7 +33,7 @@
 | JSON-хранилища | Повреждённые auth/memory/plugin хранилища не превращаются в пустые; записи атомарные, права файлов ограничены. |
 | Docker | Dev-зависимости удаляются из runtime-образа; `sharp` остаётся production-зависимостью для обработки изображений. |
 
-## Проверки CI на коммите 06a0306
+## Проверки CI
 
 | Проверка | Результат |
 |---|---|
@@ -42,11 +42,11 @@
 | Electron IPC / packaging tests | Успешно |
 | Frontend unit tests | Успешно |
 | Frontend production build | Успешно |
-| Полный npm audit | **0 уязвимостей** |
-| Production npm audit (`npm audit --omit=dev`) | **0 уязвимостей** |
+| Полный `npm audit` | Последний CI JSON не содержал записей об уязвимостях; новый блокирующий шаг `npm audit` ожидает повторного CI |
+| Production npm audit (`npm audit --omit=dev`) | Успешно в CI |
 | Docker image build + smoke (health, UI, processes, SIGTERM) | PR #5 и follow-up hardening: успешно |
 
-В репозитории остаётся прямой `shadcn` dependency. Самодельный workaround/проверки для Picomatch не заменяют исправленную upstream-версию: сырой `npm audit` всё ещё показывает 28 high severity путей, связанных с указанным advisory. Не заявлять нулевые npm-уязвимости до подтверждённого исправления и повторного `npm audit`.
+Picomatch: в lockfile присутствуют версии 2.3.2 и 4.0.7 как транзитивные зависимости инструментов разработки. GitHub Advisory Database отозвала GHSA-fc5q-39xc-vjpf 18 ноября 2026 года; advisory указывал affected versions до 4.0.7 и не указывал исправленную версию. Поэтому принудительно подменять пакет несуществующей «исправленной» версией или downgrade зависимостей нельзя. Последний npm audit JSON в CI не содержал записей об уязвимостях; production-only audit также проходит. В CI добавлен блокирующий полный `npm audit`, чтобы будущие подтверждённые уязвимости не оставались только в отчёте. Прямой `shadcn` остаётся в devDependencies. Источник: https://github.com/advisories/ghsa-fc5q-39xc-vjpf.
 
 ## Оставшиеся блокеры публичной беты
 
@@ -97,4 +97,4 @@
 
 ## Решение
 
-**PR #5 и прежний follow-up hardening находятся в `main`. PR #30 содержит SQL persistence для вложений и видео; CI прошёл, Docker smoke ожидает завершения.** Публичную регистрацию НЕХА пока не открывать до настройки и внешней проверки реального WAF/CDN, прохождения staging-матрицы и разрешения оставшегося npm audit advisory.
+**PR #5 и прежний follow-up hardening находятся в `main`. PR #30 содержит SQL persistence для вложений и видео; CI прошёл, Docker smoke ожидает завершения.** Публичную регистрацию НЕХА пока не открывать до настройки и внешней проверки реального WAF/CDN, прохождения staging-матрицы и успешного полного блокирующего `npm audit` в CI.
