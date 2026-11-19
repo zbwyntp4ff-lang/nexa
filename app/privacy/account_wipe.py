@@ -85,7 +85,7 @@ def wipe_user_account(
 
         settings = get_settings()
         report.video_jobs_deleted = get_video_job_store().delete_user_data(
-            user_id, settings.video_storage_dir
+            user_id, Path(settings.video_storage_dir)
         )
     except Exception as exc:  # noqa: BLE001
         report.details.append(f"video_jobs: {exc}")
