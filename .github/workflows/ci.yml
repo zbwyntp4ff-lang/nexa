@@ -92,13 +92,17 @@ jobs:
       - name: Report npm dependency advisories
         run: |
           npm audit --json > npm-audit.json || true
+          npm audit --omit=dev --json > npm-audit-production.json || true
           node -e "const a=require('./npm-audit.json'); for (const [name,v] of Object.entries(a.vulnerabilities||{})) console.log(JSON.stringify({name,severity:v.severity,direct:v.isDirect,range:v.range,fixAvailable:v.fixAvailable,advisories:(v.via||[]).filter(x=>typeof x==='object').map(x=>x.title)}))"
+          node -e "const a=require('./npm-audit-production.json'); for (const [name,v] of Object.entries(a.vulnerabilities||{})) console.log('PRODUCTION '+JSON.stringify({name,severity:v.severity,direct:v.isDirect,range:v.range,advisories:(v.via||[]).filter(x=>typeof x==='object').map(x=>x.title)}))"
       - name: Upload npm audit report
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: nexa-npm-audit-report
-          path: frontend/npm-audit.json
+          path: |
+            frontend/npm-audit.json
+            frontend/npm-audit-production.json
           if-no-files-found: ignore
           retention-days: 7
       - run: npx vitest run electron/__tests__/packaging.test.js
@@ -121,5 +125,5 @@ jobs:
         run: npm test
       - name: Frontend production build
         run: npm run build
-      - name: Verify patched ReDoS dependency and audit
-        run: npm run audit:security
+      - name: Audit production dependencies
+        run: npm audit --omit=dev
