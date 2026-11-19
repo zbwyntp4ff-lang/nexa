@@ -37,7 +37,7 @@ PR #28 добавляет долговечные ownership manifests для imag
 - Image attachment manifests хранят ownership и ограниченные metadata; после рестарта проверяются ID, TTL, размер, тип и реальная сигнатура файла.
 - Orphaned image files удаляются при старте attachment manager.
 - Document attachments остаются намеренно временными: extracted text/chunks in-memory, исходные файлы удаляются после parsing.
-- Video job owner/status manifest записывается атомарно с ограниченными правами файла.
+- Video job owner/status manifest записывается атомарно с ограниченными правами файла; потерянные после сбоя неотслеживаемые видео очищаются при старте.
 - Завершённые локальные видео и их ACL восстанавливаются после рестарта; незавершённые jobs помечаются failed.
 - Motion prompts, image descriptions, provider error details и подписанные remote URLs не сохраняются в video manifest.
 - Повреждённый video manifest не перезаписывается автоматически.
