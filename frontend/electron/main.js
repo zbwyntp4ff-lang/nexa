@@ -350,7 +350,12 @@ function prepareDesktopAuthStore() {
   const userDataDir = app.getPath("userData");
   const dataDir = path.join(userDataDir, "data");
   const target = path.join(dataDir, "auth_store.json");
-  fs.mkdirSync(dataDir, { recursive: true });
+  fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+  try {
+    fs.chmodSync(dataDir, 0o700);
+  } catch {
+    // Windows ACLs are inherited from the per-user Electron data directory.
+  }
   if (!fs.existsSync(target)) {
     const legacyRoot = app.isPackaged
       ? path.join(process.resourcesPath, "backend")
@@ -359,6 +364,13 @@ function prepareDesktopAuthStore() {
     if (path.resolve(legacy) !== path.resolve(target) && fs.existsSync(legacy)) {
       fs.copyFileSync(legacy, target, fs.constants.COPYFILE_EXCL);
       logger && logger.write("Migrated existing local auth store to userData.");
+    }
+  }
+  if (fs.existsSync(target)) {
+    try {
+      fs.chmodSync(target, 0o600);
+    } catch {
+      // Windows ACLs are inherited from the per-user Electron data directory.
     }
   }
   return target;
