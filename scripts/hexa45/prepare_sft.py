@@ -28,7 +28,7 @@ def _validate_record(record: Any, line_number: int) -> dict[str, list[dict[str, 
             raise ValueError(f"line {line_number}: message {index} must be an object")
         role = message.get("role")
         content = message.get("content")
-        if role not in _ALLOWED_ROLES:
+        if not isinstance(role, str) or role not in _ALLOWED_ROLES:
             raise ValueError(f"line {line_number}: unsupported role at message {index}")
         if not isinstance(content, str) or not content.strip():
             raise ValueError(f"line {line_number}: empty or non-text content at message {index}")
