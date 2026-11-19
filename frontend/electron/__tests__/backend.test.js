@@ -15,6 +15,7 @@ import {
   probeBackend,
   resolveBackendCwd,
   resolvePythonExecutable,
+  resolveDesktopStorageEnv,
 } from "../backend.js";
 describe("resolveBackendCwd", () => {
   it("resolves the repo root two levels above electron/ in dev mode", () => {
@@ -100,5 +101,28 @@ describe("BackendManager", () => {
     manager.process = { killed: false, kill: () => { throw new Error("must not be called"); } };
     manager.spawnedByUs = false;
     expect(() => manager.stop()).not.toThrow();
+  });
+});
+
+
+describe("resolveDesktopStorageEnv", () => {
+  it("places writable desktop stores beneath the per-user data directory", () => {
+    const userData = path.join(os.tmpdir(), "nexa-user-data");
+    const env = resolveDesktopStorageEnv(userData, {});
+    const dataDir = path.join(userData, "data");
+    expect(env.AUTH_STORE_PATH).toBe(path.join(dataDir, "auth_store.json"));
+    expect(env.PLUGIN_STORE_PATH).toBe(path.join(dataDir, "plugin_store.json"));
+    expect(env.PLUGIN_KEY_PATH).toBe(path.join(dataDir, "plugin.key"));
+    expect(env.MEMORY_STORE_PATH).toBe(path.join(dataDir, "memory_store.json"));
+    expect(env.AGENT_WORKSPACE_DIR).toBe(path.join(userData, "agent_workspace"));
+    expect(env.ATTACHMENT_STORAGE_DIR).toBe(path.join(dataDir, "attachments_tmp"));
+    expect(env.VIDEO_STORAGE_DIR).toBe(path.join(dataDir, "videos"));
+    expect(env.OAUTH_CREDENTIALS_DIR).toBe(path.join(dataDir, "oauth"));
+    expect(env.DATABASE_URL).toBe(`sqlite:///${path.join(dataDir, "nexa.db").replace(/\\\\/g, "/")}`);
+  });
+
+  it("preserves an explicitly configured external database URL", () => {
+    const url = "postgresql://db.example/nexa";
+    expect(resolveDesktopStorageEnv("/tmp/nexa-user", { DATABASE_URL: url }).DATABASE_URL).toBe(url);
   });
 });
