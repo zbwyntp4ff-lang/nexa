@@ -147,6 +147,7 @@ def initial_selection(settings: Settings) -> Selection:
         "gemini": settings.gemini_model,
         "openrouter": settings.openrouter_model,
         "ollama": settings.local_model_name,
+        "hexa": settings.hexa_model_name,
         "mock": "nexa-mock-1",
     }.get(provider, settings.local_model_name)
     return Selection(
