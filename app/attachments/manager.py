@@ -128,14 +128,13 @@ class AttachmentManager:
                 restored.add(attachment_id)
             except Exception:
                 metadata_path.unlink(missing_ok=True)
-                if image_path is not None and image_path.is_file() and not image_path.is_symlink():
+                if image_path is not None and (image_path.is_symlink() or image_path.is_file()):
                     image_path.unlink(missing_ok=True)
         # A crash between writing image bytes and its metadata leaves an orphan.
         for extension in IMAGE_EXTENSIONS:
             for image_path in self._storage_dir.glob(f"*.{extension}"):
                 if re.fullmatch(r"[0-9a-f]{32}", image_path.stem) and image_path.stem not in restored:
-                    if not image_path.is_symlink():
-                        image_path.unlink(missing_ok=True)
+                    image_path.unlink(missing_ok=True)
     # --- lifecycle -----------------------------------------------------------
     def cleanup_expired(self) -> int:
         """Delete expired attachments (temp files + in-memory record). Returns count removed."""
