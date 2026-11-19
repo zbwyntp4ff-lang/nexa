@@ -18,6 +18,8 @@ def _durable_cloud_env(monkeypatch, **extra: str) -> Settings:
     monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.setenv("NEXA_STORAGE_MODE", "persistent")
     monkeypatch.setenv("TOKENS_ENFORCE", "true")
+    monkeypatch.setenv("WORKFLOWS_ENABLED", "false")
+    monkeypatch.setenv("WEB_CONCURRENCY", "1")
     monkeypatch.setenv("AUTH_SKIP_EMAIL_VERIFICATION", "false")
     monkeypatch.setenv("AUTH_COOKIE_SECURE", "true")
     monkeypatch.setenv("MEMORY_BACKEND", "sql")
