@@ -50,7 +50,7 @@ async def test_in_progress_video_job_is_marked_interrupted_after_restart(tmp_pat
     restored = await restarted.get(status.job_id, user_id="user-a", enforce=True)
     assert restored is not None
     assert restored.phase == "failed"
-    assert "restarted" in restored.message.lower()
+    assert "server restart" in restored.message.lower()
     assert restored.error is None
 
 
