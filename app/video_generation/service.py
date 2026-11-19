@@ -58,6 +58,9 @@ class VideoJobStore:
     def _write_manifest(self, storage_dir: Path, manifest: dict[str, dict]) -> None:
         path = self._manifest_path(storage_dir)
         with self._manifest_lock:
+            if not manifest:
+                path.unlink(missing_ok=True)
+                return
             fd, temp_name = tempfile.mkstemp(prefix=".ownership-", dir=storage_dir)
             try:
                 try:
