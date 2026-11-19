@@ -83,7 +83,7 @@ function resolveDesktopStorageEnv(userDataDir, env = process.env) {
     DATABASE_URL: env.DATABASE_URL || `sqlite:///${sqlitePath}`,
     AUTH_STORE_PATH: dataFile("auth_store.json"),
     MEMORY_STORE_PATH: dataFile("memory_store.json"),
-    AGENT_WORKSPACE_DIR: path.join(userDataDir, "agent_workspace"),
+    AGENT_WORKSPACE_DIR: dataFile("agent_workspace"),
     PLUGIN_STORE_PATH: dataFile("plugin_store.json"),
     PLUGIN_WORKSPACE_DIR: dataFile("plugin_workspaces"),
     PLUGIN_KEY_PATH: dataFile("plugin.key"),
