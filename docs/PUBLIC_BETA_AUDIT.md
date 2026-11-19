@@ -1,97 +1,102 @@
 # НЕХА — аудит безопасности и готовности к публичной бете
 
-**Дата:** 19 ноября 2026 года  
-**Репозиторий:** `zbwyntp4ff-lang/nexa`  
-**Ветка:** `security/rebased-main-2026-11-17`  
-**PR:** #5 — открыт, пока не объединён в `main`.  
-**Проверенный кодовый коммит:** `57acf89daa56f29038042494aa77b2d14eb85ccc`
+**Дата обновления:** 19 ноября 2026 года  
+**Основная ветка:** `main`  
+**Последнее объединение:** PR #5, commit `0d180f2e798eba1b49b6f226473ba73fb7448d7d`  
+**Продолжение работ:** PR #28 — <https://github.com/zbwyntp4ff-lang/nexa/pull/28>, пока открыт и не объединён.
 
-## Итог
+## Текущий статус
 
-**Кодовые проверки PR #5 прошли.** Python, Electron, frontend, npm/pip dependency audits и Docker build/smoke завершились успешно на указанном коммите.
+PR #5 объединён в `main`. Его Python, Electron, frontend, npm/pip audit и Docker build/smoke проверки прошли на проверенных коммитах до объединения.
 
-Это не означает, что НЕХА уже готова к публичной регистрации. Остаются инфраструктурные и эксплуатационные условия: внешний rate limiting, проверка staging, постоянное хранилище для нескольких процессов, резервное копирование и полноценная проверка удаления временных файлов после перезапусков.
+PR #28 добавляет долговечные ownership manifests для image attachments и video jobs. На момент этого обновления CI PR #28:
+- Python tests — успешно;
+- Electron IPC/packaging — успешно;
+- Frontend tests/build и production npm audit — успешно;
+- Docker build/smoke — выполняется.
 
-Это code-level security review репозитория и CI, а не внешний penetration test и не сертификация работающего публичного сервиса.
+Пока PR #28 не объединён, его изменения не входят в `main`.
 
-## Исправления
+**НЕХА не объявляется готовой к публичному запуску.** Автоматические тесты и code review не заменяют реальное staging-тестирование, инфраструктурную настройку и независимый penetration test.
 
-| Область | Что сделано |
-|---|---|
-| Сессии | Браузерный Bearer-токен убран из JS-хранилища; используется HttpOnly cookie. |
-| CSRF | Добавлена проверка Origin для изменяющих состояние запросов, авторизованных cookie. Apple form-post callback опирается на одноразовый OAuth state. |
-| Electron auth | UI и API используют hostname `localhost`; cookie не переключается между `localhost` и `127.0.0.1`. |
-| Electron storage | Writable-хранилища, SQLite, OAuth credentials, plugin key, память, вложения, видео и рабочие каталоги перенесены в пользовательскую папку. Добавлена миграция существующих локальных файлов; юридические документы остаются read-only ресурсами приложения. |
-| OAuth | Отсутствующий признак подтверждённого email считается неподтверждённым. |
-| Device login | Сырой временный session token не сохраняется в JSON. Старые записи с таким токеном очищаются при загрузке. |
-| Удаление аккаунта | Удаляются сессии, device-login и passkey-записи, память, документы, feedback, conversations, плагины, workflow, профили, token records и отслеживаемые видеофайлы. |
-| Workflow approvals | Общая очередь подтверждений доступна только владельцу НЕХА. |
-| Изоляция | Усилена изоляция agent workspace, памяти, плагинов, вложений и видео по user_id. |
-| Агент | Контекст модели сбрасывается через `finally`, в том числе при исключениях и отмене. |
-| Секреты плагинов | Новые секреты шифруются AES-256-GCM. NEXA1 остаётся только для чтения старых записей. |
-| JSON-хранилища | Повреждённые auth/memory/plugin хранилища не превращаются в пустые; записи атомарные, права файлов ограничены. |
-| Docker | Dev-зависимости удаляются из runtime-образа; `sharp` остаётся production-зависимостью для обработки изображений. |
+## Что уже исправлено в PR #5
 
-## Проверки CI на коммите 57acf89
+- Cookie-based authentication, CSRF Origin checks и same-host Electron UI/API cookies.
+- OAuth fail-closed при отсутствующем подтверждении email.
+- Device-login bearer tokens исключены из постоянного auth JSON; user-bound device/passkey записи очищаются при удалении аккаунта.
+- Workflow approvals ограничены владельцем.
+- Изоляция agent workspace, memory, plugins, attachments и video jobs по user_id.
+- Контекст агента сбрасывается через `finally` в том числе при исключениях и отмене.
+- Новые plugin secrets шифруются AES-256-GCM; старый NEXA1 поддерживается только для чтения.
+- Auth/memory/plugin JSON stores работают с атомарной записью и fail-closed при повреждении.
+- Writable Electron data/database/credentials/workspaces перемещены в userData; существующие локальные файлы мигрируются.
+- Docker runtime очищен от dev-зависимостей.
 
-| Проверка | Результат |
-|---|---|
-| Python unit/security/planner/office/compound/phase5 | Успешно |
-| Python dependency audit (`pip-audit`) | **0 известных уязвимостей** |
-| Electron IPC / packaging tests | Успешно |
-| Frontend unit tests | Успешно |
-| Frontend production build | Успешно |
-| Полный npm audit | **0 уязвимостей** |
-| Production npm audit (`npm audit --omit=dev`) | **0 уязвимостей** |
-| Docker image build + smoke (health, UI, processes, SIGTERM) | Успешно |
+## Дополнительные исправления PR #28 — проверка ещё идёт
 
-Предупреждение Picomatch, которое ранее давало множество транзитивных путей, было отозвано GitHub 18 ноября 2026 года. После удаления самодельного patch-workaround и переноса CLI `shadcn` в devDependencies полный npm audit на проверенном коммите показывает ноль уязвимостей.
+- Image attachment manifests хранят ownership и ограниченные metadata; после рестарта проверяются ID, TTL, размер, тип и реальная сигнатура файла.
+- Orphaned image files удаляются при старте attachment manager.
+- Document attachments остаются намеренно временными: extracted text/chunks in-memory, исходные файлы удаляются после parsing.
+- Video job owner/status manifest записывается атомарно с ограниченными правами файла.
+- Завершённые локальные видео и их ACL восстанавливаются после рестарта; незавершённые jobs помечаются failed.
+- Motion prompts, image descriptions, provider error details и подписанные remote URLs не сохраняются в video manifest.
+- Повреждённый video manifest не перезаписывается автоматически.
+- Account wipe удаляет записи video jobs и принадлежащие пользователю отслеживаемые локальные видео.
 
-## Оставшиеся блокеры публичной беты
+## Что осталось до публичной беты
 
-### P1 — Распределённая защита от злоупотреблений
+### P1 — Внешний rate limiting
 
-Внутренний rate limiter работает в памяти одного процесса. До публичного запуска необходим доверенный CDN/WAF или reverse proxy с распределёнными лимитами для входа, регистрации, сброса пароля, API и ресурсоёмких операций. Заголовки IP должны приниматься только от доверенного proxy.
+Встроенные API/auth лимитеры работают в памяти одного процесса и сбрасываются при рестарте. Нужен доверенный CDN/WAF или reverse proxy с ограничениями по IP и отдельными лимитами для:
+- `/api/v1/auth/login`;
+- регистрации и восстановления пароля;
+- ресурсоёмких AI/video/upload endpoints;
+- общего `/api/*`.
 
-### P1 — Хранилище и масштабирование
+Нельзя доверять произвольному `X-Forwarded-For`. Реальный IP должен устанавливаться только от явно доверенных proxy ranges. Инструкция: `docs/EDGE_RATE_LIMITING.md`.
 
-Часть состояния и очередей остаётся JSON- или in-memory. Текущая конфигурация рассчитана на один экземпляр приложения и один процесс. До горизонтального масштабирования нужны общая транзакционная БД, распределённые очереди/лимиты и согласованное хранилище.
+### P1 — Однопроцессный режим и постоянное хранилище
 
-### P1 — Удаление временных данных после перезапуска
+Текущие JSON stores и in-memory queues не дают транзакционной координации между несколькими worker-процессами или репликами. До внедрения общей транзакционной БД, распределённых очередей и shared rate limiting запускать только один экземпляр приложения и один API worker. Persistent volume обязателен для JSON stores, SQLite, image attachments и videos.
 
-Метаданные части вложений и видео-задач находятся в памяти процесса. После рестарта временные файлы могут остаться без метаданных владельца; текущая процедура удаления аккаунта удаляет файлы, связанные с ещё отслеживаемыми задачами. До публичной беты необходимы durable ownership manifests и TTL-cleanup для orphaned attachments/videos.
+### P1 — Staging
 
-### P1 — Staging и production-конфигурация
-
-Проверить на production-like staging:
-- регистрацию, подтверждение email, вход/выход и восстановление сессии;
+На отдельном production-like staging, без реальных пользователей, проверить:
+- регистрацию, email verification, login/logout, session renewal;
 - OAuth Google/GitHub/Apple и device login;
-- изоляцию двух разных пользователей;
-- вложения, плагины, память, agent tools и видео;
-- удаление аккаунта, рестарт и восстановление из резервной копии;
-- HTTPS, cookie flags, CORS/CSRF, заголовки proxy и сетевые ограничения.
+- изоляцию двух пользователей для memory, plugins, agent workspace, images, videos и account wipe;
+- restart во время загрузки документа, image upload и video generation;
+- истечение TTL и удаление orphaned media;
+- восстановление из backup;
+- HTTPS, Secure/HttpOnly/SameSite cookies, CORS, CSRF, trusted proxy headers и edge limits;
+- SMTP delivery, named AI provider, timeout/error handling и kill switch.
 
-Перед открытием регистрации должны быть подтверждены:
+### P1 — Production secrets и эксплуатация
+
+До регистрации должны быть настроены и проверены в secret manager:
 - `TOKENS_ENFORCE=true`;
 - `AUTH_COOKIE_SECURE=true` за HTTPS;
 - `AUTH_SKIP_EMAIL_VERIFICATION=false`;
-- `AUTH_BOOTSTRAP_FIRST_OWNER=false` и явный список владельцев;
-- рабочий SMTP и проверенная доставка писем;
-- действительные production AI provider credentials;
-- постоянное хранилище, резервное копирование и мониторинг;
-- внешний rate limiting.
+- `AUTH_BOOTSTRAP_FIRST_OWNER=false` с явным owner allow-list;
+- SMTP host/credentials/from;
+- production AI provider key и конкретная модель;
+- точные HTTPS origins для CORS/Auth/Billing;
+- persistent disk или managed database;
+- резервные копии с проверенным восстановлением;
+- мониторинг, алерты, логирование без секретов и процедура реагирования на инциденты.
 
-### P2 — Миграция существующих desktop-данных
+### P2 — Миграция существующих desktop данных
 
-Первый запуск переносит legacy-файлы в Electron userData. Старые записи памяти/плагинов без user_id и прежние общие рабочие каталоги нужно проверить на реальной копии пользовательских данных: автоматическое назначение старых unscoped-записей новому владельцу не выполняется во всех форматах.
+На копии реальных данных проверить перенос Electron userData, legacy memory/plugin records, workspaces и OAuth credentials. Не назначать старые unscoped данные новому аккаунту автоматически без проверки владельца.
 
 ## Границы аудита
 
-- Проверены критические изменения авторизации, OAuth, cookie/CSRF, SSRF/DNS pinning, sandbox paths, агентных инструментов, plugin secrets, user isolation, account wipe и Electron packaging.
-- В PR нет изменений в исходниках billing, Stripe, subscriptions, token charging или balances. Перемещаются только desktop storage paths для локальных данных.
-- Не выполнялись платные production-запросы, изменение DNS, production-развёртывание или использование production secrets.
-- Не проводился внешний penetration test. CI и ручной code review не заменяют staging и независимый pentest.
+- PR #5: code-level review и автоматические проверки критических изменений auth, OAuth, CSRF, SSRF/DNS pinning, sandbox paths, per-user isolation, plugin secrets, account wipe и Electron packaging.
+- PR #28: review и CI для durable media manifests; результаты CI перечислены выше и могут измениться до merge.
+- npm и pip audits проверяют известные advisory на момент запуска, но не доказывают отсутствие всех уязвимостей.
+- Не проводился внешний penetration test, независимый security assessment или live production validation.
+- Не создавались cloud resources, домены, DNS records и production secrets; платные сервисы не подключались.
 
 ## Решение
 
-**PR #5 прошёл автоматические проверки и Docker smoke.** Его можно переносить в `main` после финальной проверки статусов PR. Публичную регистрацию НЕХА пока не открывать до выполнения staging и инфраструктурных требований выше.
+**NO-GO для открытой публичной регистрации до завершения PR #28, edge rate limiting, staging smoke/acceptance, backup restore и независимой проверки.** Текущая работа — подготовка к staging, не production launch.
