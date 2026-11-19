@@ -37,3 +37,8 @@ The shipped `deploy/Caddyfile` only reverse-proxies. Adding `rate_limit` require
 **non-standard** Caddy build (`xcaddy` + plugin). That is intentionally **not**
 vendored here so the Docker image stays on distro Caddy. Use an external edge
 or rebuild Caddy out-of-band if you need native Caddy limits.
+
+
+## Public-cloud startup gate
+
+`TRUSTED_EDGE_RATE_LIMIT_ENABLED=true` is now required by the durable-production / open-beta startup guard. This is an operator attestation, not automatic detection: set it only after the deployed CDN/WAF/reverse proxy has real distributed per-IP and route-specific limits, and has been tested from outside the host. The app continues to enforce its own in-process limits as a secondary layer. Setting the flag without configuring the edge does not create protection.
