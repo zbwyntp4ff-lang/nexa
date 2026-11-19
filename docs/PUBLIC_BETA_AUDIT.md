@@ -5,11 +5,11 @@
 **Ветка:** `main`  
 **PR #5:** объединён 19 ноября 2026 года.  
 **Текущий проверенный CI-коммит:** `06a0306d636765bd9e8d1d557bb7c1ce307069c3`  
-**Docker smoke для follow-up hardening:** выполняется на `fc47b3760912b53d50ebcfff59074618cc837490`.
+**Docker smoke для follow-up hardening:** успешно завершён на `fc47b3760912b53d50ebcfff59074618cc837490`.
 
 ## Итог
 
-**PR #5 объединён, а последующие изменения продолжают проверяться в `main`.** На текущем CI-коммите Python, Electron, frontend, npm/pip dependency audits прошли успешно. Отдельный Docker build/smoke для follow-up изменений ещё выполняется; его нельзя считать пройденным до завершения workflow.
+**PR #5 объединён, а последующие изменения продолжают проверяться в `main`.** На текущем CI-коммите Python, Electron, frontend, npm/pip dependency audits прошли успешно. Отдельный Docker build/smoke для follow-up изменений также завершился успешно: health, UI, процессы Caddy/Uvicorn/Next.js и корректное завершение контейнера проверены.
 
 Это не означает, что НЕХА уже готова к публичной регистрации. Остаются инфраструктурные и эксплуатационные условия: внешний rate limiting, проверка staging, постоянное хранилище для нескольких процессов, резервное копирование и полноценная проверка удаления временных файлов после перезапусков.
 
@@ -44,7 +44,7 @@
 | Frontend production build | Успешно |
 | Полный npm audit | **0 уязвимостей** |
 | Production npm audit (`npm audit --omit=dev`) | **0 уязвимостей** |
-| Docker image build + smoke (health, UI, processes, SIGTERM) | PR #5: успешно; follow-up hardening: проверка выполняется |
+| Docker image build + smoke (health, UI, processes, SIGTERM) | PR #5 и follow-up hardening: успешно |
 
 Предупреждение Picomatch, которое ранее давало множество транзитивных путей, было отозвано GitHub 18 ноября 2026 года. После удаления самодельного patch-workaround и переноса CLI `shadcn` в devDependencies полный npm audit на проверенном коммите показывает ноль уязвимостей.
 
@@ -97,4 +97,4 @@
 
 ## Решение
 
-**PR #5 уже находится в `main`.** Последующий hardening проверен Python/Electron/frontend CI; Docker smoke для последних инфраструктурных ограничений ещё ожидает финального результата. Публичную регистрацию НЕХА пока не открывать до успешного Docker smoke, настройки реального WAF/CDN и прохождения staging-матрицы выше.
+**PR #5 и follow-up hardening находятся в `main`; автоматические проверки и Docker smoke прошли.** Публичную регистрацию НЕХА пока не открывать до настройки и внешней проверки реального WAF/CDN и прохождения staging-матрицы выше.
