@@ -116,6 +116,9 @@ class AttachmentManager:
 
     def _write_manifest(self, manifest: dict[str, dict]) -> None:
         with self._manifest_lock:
+            if not manifest:
+                self._manifest_path.unlink(missing_ok=True)
+                return
             fd, temp_name = tempfile.mkstemp(prefix=".ownership-", dir=self._storage_dir)
             try:
                 try:
