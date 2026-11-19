@@ -28,6 +28,8 @@ def _public_beta_env(monkeypatch, **extra: str) -> Settings:
     monkeypatch.setenv("TRUSTED_EDGE_RATE_LIMIT_ENABLED", "true")
     monkeypatch.setenv("API_RATE_LIMIT_PER_MINUTE", "120")
     monkeypatch.setenv("REGISTER_RATE_LIMIT_PER_HOUR", "10")
+    monkeypatch.setenv("WORKFLOWS_ENABLED", "false")
+    monkeypatch.setenv("WEB_CONCURRENCY", "1")
     monkeypatch.setenv("AUTH_SKIP_EMAIL_VERIFICATION", "false")
     monkeypatch.setenv("AUTH_COOKIE_SECURE", "true")
     monkeypatch.setenv("AUTH_SINGLE_USER", "false")
@@ -63,6 +65,17 @@ def test_public_beta_requires_trusted_edge_and_nonzero_rate_limits(monkeypatch):
     assert any("TRUSTED_EDGE_RATE_LIMIT_ENABLED" in p for p in problems)
     assert any("API_RATE_LIMIT_PER_MINUTE" in p for p in problems)
     assert any("REGISTER_RATE_LIMIT_PER_HOUR" in p for p in problems)
+
+
+def test_public_beta_rejects_in_memory_workflows_and_multiple_workers(monkeypatch):
+    settings = _public_beta_env(
+        monkeypatch,
+        WORKFLOWS_ENABLED="true",
+        WEB_CONCURRENCY="2",
+    )
+    problems = validate_production_settings(settings)
+    assert any("WORKFLOWS_ENABLED" in p for p in problems)
+    assert any("WEB_CONCURRENCY" in p for p in problems)
 
 
 def test_public_beta_rejects_free_model_and_desktop(monkeypatch):
