@@ -50,7 +50,12 @@ function probeBackend(baseUrl, timeoutMs = 1500) {
 }
 /** Resolve the repo/backend working directory for dev vs. packaged mode. */
 function normalizeLoopbackBackendUrl(url) {
-  return String(url).replace(/^http:\/\/127\.0\.0\.1(?=:\\d|\/|$)/i, "http://localhost");
+  const parsed = new URL(String(url));
+  if (parsed.protocol === "http:" && ["127.0.0.1", "::1"].includes(parsed.hostname)) {
+    parsed.hostname = "localhost";
+  }
+  const pathname = parsed.pathname === "/" ? "" : parsed.pathname.replace(/\/$/, "");
+  return `${parsed.protocol}//${parsed.host}${pathname}${parsed.search}${parsed.hash}`;
 }
 function resolveBackendCwd({ isPackaged, resourcesPath, electronDir }) {
   if (isPackaged) {
