@@ -249,3 +249,21 @@ def test_crypto_rejects_tampered_aes_gcm_payload():
     with pytest.raises(ValueError, match="authentication failed"):
         decrypt_secret(tampered, b"k" * 32)
 
+def test_corrupt_plugin_store_fails_closed(tmp_path: Path):
+    from app.plugins.store import PluginStore
+
+    store_path = tmp_path / "plugin_store.json"
+    store_path.write_text("{broken", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="Cannot load NEXA plugin store"):
+        PluginStore(store_path)
+
+
+def test_truncated_plugin_master_key_is_not_replaced(tmp_path: Path):
+    from app.plugins.crypto import load_or_create_master_key
+
+    key_path = tmp_path / "plugin.key"
+    key_path.write_bytes(b"short")
+    with pytest.raises(RuntimeError, match="corrupt or truncated"):
+        load_or_create_master_key(str(key_path))
+    assert key_path.read_bytes() == b"short"
+
