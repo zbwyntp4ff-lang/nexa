@@ -41,7 +41,7 @@ or rebuild Caddy out-of-band if you need native Caddy limits.
 
 ## Ready-to-adapt Nginx edge template
 
-The repository now includes:
+The repository now includes (the Nginx template uses the `http2 on` directive and targets Nginx 1.25.1+):
 - `deploy/nginx-edge.conf.example` — TLS reverse proxy with a general API limit and stricter limits for login, registration, password recovery, email verification, device login and passkey login.
 - `deploy/nginx-proxy-headers.conf.example` — forwarded headers for the upstream NEXA Caddy container.
 
