@@ -10,7 +10,7 @@
 "use strict";
 const path = require("node:path");
 const { app, BrowserWindow, Menu, Tray, shell, ipcMain, dialog, session } = require("electron");
-const { BackendManager, DEFAULT_BACKEND_URL, resolveDesktopStorageEnv } = require("./backend");
+const { BackendManager, DEFAULT_BACKEND_URL, resolveDesktopStorageEnv, migrateLegacyData } = require("./backend");
 const { createLogger } = require("./log");
 const { startStaticServer } = require("./static-server");
 const FRONTEND_DEV_URL = "http://localhost:4820";
@@ -349,24 +349,15 @@ function prepareDesktopAuthStore() {
   const fs = require("node:fs");
   const userDataDir = app.getPath("userData");
   const storageEnv = resolveDesktopStorageEnv(userDataDir, process.env);
-  const dataDir = path.join(userDataDir, "data");
+  const legacyRoot = app.isPackaged
+    ? path.join(process.resourcesPath, "backend")
+    : path.join(__dirname, "..", "..");
+  migrateLegacyData({
+    legacyRoot,
+    userDataDir,
+    onLog: (message) => logger && logger.write(message),
+  });
   const target = storageEnv.AUTH_STORE_PATH;
-  fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
-  try {
-    fs.chmodSync(dataDir, 0o700);
-  } catch {
-    // Windows ACLs are inherited from the per-user Electron data directory.
-  }
-  if (!fs.existsSync(target)) {
-    const legacyRoot = app.isPackaged
-      ? path.join(process.resourcesPath, "backend")
-      : path.join(__dirname, "..", "..");
-    const legacy = path.join(legacyRoot, "data", "auth_store.json");
-    if (path.resolve(legacy) !== path.resolve(target) && fs.existsSync(legacy)) {
-      fs.copyFileSync(legacy, target, fs.constants.COPYFILE_EXCL);
-      logger && logger.write("Migrated existing local auth store to userData.");
-    }
-  }
   if (fs.existsSync(target)) {
     try {
       fs.chmodSync(target, 0o600);
