@@ -3,12 +3,11 @@
 Does not claim deletion from backups, CDN caches, or provider logs.
 """
 from __future__ import annotations
-
-from pathlib import Path
-
+\n
 from pydantic import BaseModel, Field
 
 from app.auth.store import AuthStore
+from app.core.paths import resolve_under_project_root
 from app.knowledge.knowledge_base import KnowledgeBase
 from app.knowledge_core.feedback import delete_feedback_for_user
 from app.memory.manager import MemoryManager
@@ -87,7 +86,7 @@ def wipe_user_account(
 
         settings = get_settings()
         report.video_jobs_deleted = get_video_job_store().delete_user_data(
-            user_id, Path(settings.video_storage_dir)
+            user_id, resolve_under_project_root(settings.video_storage_dir)
         )
     except Exception as exc:  # noqa: BLE001
         report.details.append(f"video_jobs: {exc}")
