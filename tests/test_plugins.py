@@ -229,3 +229,23 @@ def test_plugin_audit_and_workspace_deletion_are_user_scoped(mgr: PluginManager,
     (alice_root / "private.txt").write_text("alice data", encoding="utf-8")
     assert mgr.delete_user_data("alice") == 0
     assert not alice_root.exists()
+
+def test_crypto_reads_legacy_nexa1_secret():
+    from app.plugins.crypto import decrypt_secret
+
+    legacy = "TkVYQTEAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eH_DR8vu56kFpusuPJjcPTz2afbBKIxKBQUtkRDysd6B1FITKXpdJsrhU2_GeaTgNXGOsXA=="
+    assert decrypt_secret(legacy, b"k" * 32) == "legacy-plugin-token"
+
+
+def test_crypto_rejects_tampered_aes_gcm_payload():
+    import base64
+    import pytest
+    from app.plugins.crypto import decrypt_secret, encrypt_secret
+
+    token = encrypt_secret("plugin-secret", b"k" * 32)
+    blob = bytearray(base64.urlsafe_b64decode(token.encode("ascii")))
+    blob[-1] ^= 1
+    tampered = base64.urlsafe_b64encode(blob).decode("ascii")
+    with pytest.raises(ValueError, match="authentication failed"):
+        decrypt_secret(tampered, b"k" * 32)
+
