@@ -45,6 +45,8 @@ class VideoJobStore:
         manifest_path = resolved_dir / ".nexa_video_jobs.json"
         if self._manifest_path == manifest_path:
             return
+        temporary_manifest = manifest_path.with_name(manifest_path.name + ".tmp")
+        temporary_manifest.unlink(missing_ok=True)
         loaded: dict[str, _Job] = {}
         if manifest_path.is_symlink():
             raise RuntimeError("Video job manifest must not be a symlink.")
@@ -161,12 +163,15 @@ class VideoJobStore:
                 "status": status.model_dump(mode="json"),
             })
         temporary = self._manifest_path.with_name(self._manifest_path.name + ".tmp")
-        temporary.write_text(
-            json.dumps(entries, ensure_ascii=False, separators=(",", ":")),
-            encoding="utf-8",
-        )
-        os.chmod(temporary, 0o600)
-        os.replace(temporary, self._manifest_path)
+        try:
+            temporary.write_text(
+                json.dumps(entries, ensure_ascii=False, separators=(",", ":")),
+                encoding="utf-8",
+            )
+            os.chmod(temporary, 0o600)
+            os.replace(temporary, self._manifest_path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     def _delete_local_video(
         self, video_url: str | None, storage_dir: Path | None = None
