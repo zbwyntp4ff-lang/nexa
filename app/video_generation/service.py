@@ -4,6 +4,8 @@ from __future__ import annotations
 import asyncio
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
+from urllib.parse import urlparse
 
 from app.attachments.manager import AttachmentManager
 from app.billing.entitlements import EntitlementService
@@ -71,6 +73,32 @@ class VideoJobStore:
         async with self._lock:
             if job_id in self._jobs:
                 self._jobs[job_id].task = task
+
+
+    def delete_user_data(self, user_id: str, storage_dir: Path) -> int:
+        """Cancel a user's active jobs and remove their generated local videos."""
+        owned = [
+            (job_id, job)
+            for job_id, job in self._jobs.items()
+            if job.user_id == user_id
+        ]
+        root = storage_dir.resolve()
+        for job_id, job in owned:
+            self._jobs.pop(job_id, None)
+            if job.task is not None and not job.task.done():
+                job.task.cancel()
+            video_url = job.status.video_url or ""
+            filename = Path(urlparse(video_url).path).name
+            if not filename:
+                continue
+            candidate = root / filename
+            if candidate.is_symlink():
+                candidate.unlink(missing_ok=True)
+                continue
+            resolved = candidate.resolve()
+            if resolved != root and root in resolved.parents and resolved.is_file():
+                resolved.unlink(missing_ok=True)
+        return len(owned)
 
 
 _STORE = VideoJobStore()
