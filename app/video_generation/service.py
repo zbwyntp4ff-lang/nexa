@@ -83,7 +83,7 @@ class VideoJobStore:
         filename = entry.get("filename")
         if not isinstance(filename, str) or Path(filename).name != filename:
             return None
-        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}\\.(?:mp4|webm|mov)", filename, re.IGNORECASE):
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}\.(?:mp4|webm|mov)", filename, re.IGNORECASE):
             return None
         candidate = storage_dir / filename
         if candidate.is_symlink():
@@ -216,7 +216,7 @@ class VideoJobStore:
                 job.task.cancel()
             video_url = job.status.video_url or ""
             filename = Path(urlparse(video_url).path).name
-            if filename and re.fullmatch(r"[A-Za-z0-9_-]{1,64}\\.(?:mp4|webm|mov)", filename, re.IGNORECASE):
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}\.(?:mp4|webm|mov)", filename, re.IGNORECASE):
                 candidate = root / filename
                 if candidate.is_symlink():
                     candidate.unlink(missing_ok=True)
