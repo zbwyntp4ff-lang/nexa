@@ -84,102 +84,104 @@ class Agent:
         model_provider_token = _RUN_MODEL_PROVIDER.set(None)
         model_id_token = _RUN_MODEL_ID.set(None)
         model_display_token = _RUN_MODEL_DISPLAY.set(None)
-        # Compound multi-artifact tasks need more steps/time than single-tool demos.
-        max_steps = self.max_steps
-        timeout = self.timeout_seconds
-        error_limit = self.error_limit
-        project_status = "running"
-        project_id = None
-        manifest_dict = None
-        partial = False
         try:
-            from app.agent.compound import build_compound_plan
+            # Compound multi-artifact tasks need more steps/time than single-tool demos.
+            max_steps = self.max_steps
+            timeout = self.timeout_seconds
+            error_limit = self.error_limit
+            project_status = "running"
+            project_id = None
+            manifest_dict = None
+            partial = False
+            try:
+                from app.agent.compound import build_compound_plan
 
-            plan = build_compound_plan(task.description)
-            if plan.is_compound:
-                max_steps = max(max_steps, 4 + 2 * len(plan.deliverables))
-                timeout = max(timeout, 120.0)
-                error_limit = max(error_limit, 2 * len(plan.deliverables))
-                project_status = "planning"
-        except Exception:  # noqa: BLE001
-            plan = None
-        start = time.perf_counter()
-        logger.info(
-            "agent run started task_id=%s dry_run=%s max_steps=%d timeout=%.1f error_limit=%d",
-            task.id,
-            task.dry_run,
-            max_steps,
-            timeout,
-            error_limit,
-        )
-        # Budgets are local to this invocation. Agent is cached and may serve
-        # multiple concurrent requests; never mutate shared instance settings.
-        try:
+                plan = build_compound_plan(task.description)
+                if plan.is_compound:
+                    max_steps = max(max_steps, 4 + 2 * len(plan.deliverables))
+                    timeout = max(timeout, 120.0)
+                    error_limit = max(error_limit, 2 * len(plan.deliverables))
+                    project_status = "planning"
+            except Exception:  # noqa: BLE001
+                plan = None
+            start = time.perf_counter()
+            logger.info(
+                "agent run started task_id=%s dry_run=%s max_steps=%d timeout=%.1f error_limit=%d",
+                task.id,
+                task.dry_run,
+                max_steps,
+                timeout,
+                error_limit,
+            )
+            # Budgets are local to this invocation. Agent is cached and may serve
+            # multiple concurrent requests; never mutate shared instance settings.
+            try:
+                if plan is not None and plan.is_compound:
+                    project_status = "running"
+                await asyncio.wait_for(
+                    self._run_loop(
+                        state,
+                        cancel_event,
+                        max_steps=max_steps,
+                        error_limit=error_limit,
+                    ),
+                    timeout=timeout,
+                )
+            except asyncio.TimeoutError:
+                state.status = AgentStatus.TIMEOUT
+                project_status = "failed"
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            final_answer = self._extract_final_answer(state)
+            success = state.status == AgentStatus.COMPLETED
             if plan is not None and plan.is_compound:
-                project_status = "running"
-            await asyncio.wait_for(
-                self._run_loop(
-                    state,
-                    cancel_event,
-                    max_steps=max_steps,
-                    error_limit=error_limit,
-                ),
-                timeout=timeout,
+                project_status = "verifying"
+                manifest_dict, project_id, partial = self._build_manifest(
+                    plan, state, task, final_answer
+                )
+                if state.status == AgentStatus.CANCELLED:
+                    project_status = "cancelled"
+                elif state.status in {
+                    AgentStatus.TIMEOUT,
+                    AgentStatus.MAX_STEPS_EXCEEDED,
+                    AgentStatus.ERROR_LIMIT_EXCEEDED,
+                    AgentStatus.FAILED,
+                }:
+                    project_status = "failed"
+                elif partial:
+                    project_status = "completed"  # completed with gaps — honest in manifest
+                elif success:
+                    project_status = "completed"
+                else:
+                    project_status = "failed"
+            logger.info(
+                "agent run finished task_id=%s status=%s steps=%d elapsed_ms=%.1f project=%s",
+                task.id,
+                state.status.value,
+                len(state.steps),
+                elapsed_ms,
+                project_status,
             )
-        except asyncio.TimeoutError:
-            state.status = AgentStatus.TIMEOUT
-            project_status = "failed"
-        elapsed_ms = (time.perf_counter() - start) * 1000
-        final_answer = self._extract_final_answer(state)
-        success = state.status == AgentStatus.COMPLETED
-        if plan is not None and plan.is_compound:
-            project_status = "verifying"
-            manifest_dict, project_id, partial = self._build_manifest(
-                plan, state, task, final_answer
+            result = AgentResult(
+                task_id=task.id,
+                status=state.status,
+                success=success,
+                final_answer=final_answer,
+                steps=state.steps,
+                elapsed_ms=round(elapsed_ms, 2),
+                dry_run=task.dry_run,
+                provider=_RUN_MODEL_PROVIDER.get(),
+                model=_RUN_MODEL_ID.get(),
+                display_name=_RUN_MODEL_DISPLAY.get(),
+                project_status=project_status if plan and plan.is_compound else None,
+                project_id=project_id,
+                project_manifest=manifest_dict,
+                partial_success=partial,
             )
-            if state.status == AgentStatus.CANCELLED:
-                project_status = "cancelled"
-            elif state.status in {
-                AgentStatus.TIMEOUT,
-                AgentStatus.MAX_STEPS_EXCEEDED,
-                AgentStatus.ERROR_LIMIT_EXCEEDED,
-                AgentStatus.FAILED,
-            }:
-                project_status = "failed"
-            elif partial:
-                project_status = "completed"  # completed with gaps — honest in manifest
-            elif success:
-                project_status = "completed"
-            else:
-                project_status = "failed"
-        logger.info(
-            "agent run finished task_id=%s status=%s steps=%d elapsed_ms=%.1f project=%s",
-            task.id,
-            state.status.value,
-            len(state.steps),
-            elapsed_ms,
-            project_status,
-        )
-        result = AgentResult(
-            task_id=task.id,
-            status=state.status,
-            success=success,
-            final_answer=final_answer,
-            steps=state.steps,
-            elapsed_ms=round(elapsed_ms, 2),
-            dry_run=task.dry_run,
-            provider=_RUN_MODEL_PROVIDER.get(),
-            model=_RUN_MODEL_ID.get(),
-            display_name=_RUN_MODEL_DISPLAY.get(),
-            project_status=project_status if plan and plan.is_compound else None,
-            project_id=project_id,
-            project_manifest=manifest_dict,
-            partial_success=partial,
-        )
-        _RUN_MODEL_PROVIDER.reset(model_provider_token)
-        _RUN_MODEL_ID.reset(model_id_token)
-        _RUN_MODEL_DISPLAY.reset(model_display_token)
-        return result
+            return result
+        finally:
+            _RUN_MODEL_PROVIDER.reset(model_provider_token)
+            _RUN_MODEL_ID.reset(model_id_token)
+            _RUN_MODEL_DISPLAY.reset(model_display_token)
     async def _run_loop(
         self,
         state: AgentState,
