@@ -71,6 +71,7 @@ async def get_video_file(filename: str, user: _Auth = None) -> FileResponse:
         Path(filename).name,
         user_id=user.id if user is not None else None,
         enforce=settings.tokens_enforce,
+        storage_dir=resolve_under_project_root(settings.video_storage_dir),
     )
     if not allowed:
         raise ModelError("Video file not found.")
