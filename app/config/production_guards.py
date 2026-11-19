@@ -289,16 +289,25 @@ def _public_cloud_problems(settings: Settings, *, label: str) -> list[str]:
         )
 
     if settings.workflows_enabled:
-
-        logger.warning(
-
-            "WORKFLOWS_ENABLED=true on %s: workflow state is in-memory and "
-
-            "lost on restart. Prefer WORKFLOWS_ENABLED=false.",
-
-            label,
-
+        problems.append(
+            "WORKFLOWS_ENABLED must be false for public/durable hosting until "
+            "workflow state is stored in a shared durable database"
         )
+
+    worker_values = {
+        name: (os.environ.get(name) or "").strip()
+        for name in ("WEB_CONCURRENCY", "UVICORN_WORKERS", "GUNICORN_WORKERS")
+        if (os.environ.get(name) or "").strip()
+    }
+    for name, raw_value in worker_values.items():
+        try:
+            worker_count = int(raw_value)
+        except ValueError:
+            problems.append(f"{name} must be an integer and set to 1 for the current single-process architecture")
+            continue
+        if worker_count != 1:
+            problems.append(f"{name} must be 1; NEXA currently requires one application worker")
+
 
     return problems
 
