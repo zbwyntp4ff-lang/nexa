@@ -10,7 +10,7 @@
 "use strict";
 const path = require("node:path");
 const { app, BrowserWindow, Menu, Tray, shell, ipcMain, dialog, session } = require("electron");
-const { BackendManager, DEFAULT_BACKEND_URL } = require("./backend");
+const { BackendManager, DEFAULT_BACKEND_URL, resolveDesktopStorageEnv } = require("./backend");
 const { createLogger } = require("./log");
 const { startStaticServer } = require("./static-server");
 const FRONTEND_DEV_URL = "http://localhost:4820";
@@ -348,8 +348,9 @@ function showAboutDialog() {
 function prepareDesktopAuthStore() {
   const fs = require("node:fs");
   const userDataDir = app.getPath("userData");
+  const storageEnv = resolveDesktopStorageEnv(userDataDir, process.env);
   const dataDir = path.join(userDataDir, "data");
-  const target = path.join(dataDir, "auth_store.json");
+  const target = storageEnv.AUTH_STORE_PATH;
   fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   try {
     fs.chmodSync(dataDir, 0o700);
@@ -373,7 +374,7 @@ function prepareDesktopAuthStore() {
       // Windows ACLs are inherited from the per-user Electron data directory.
     }
   }
-  return target;
+  return storageEnv;
 }
 function createTray() {
   try {
@@ -544,7 +545,7 @@ if (!gotSingleInstanceLock) {
       return;
     }
     createTray();
-    const desktopAuthStorePath = prepareDesktopAuthStore();
+    const desktopStorageEnv = prepareDesktopAuthStore();
     backendManager = new BackendManager({
       url: BACKEND_URL,
       isPackaged: app.isPackaged,
@@ -552,7 +553,7 @@ if (!gotSingleInstanceLock) {
       electronDir: __dirname,
       onLog: (line) => logger.write(line),
       extraEnv: {
-        AUTH_STORE_PATH: desktopAuthStorePath,
+        ...desktopStorageEnv,
         CORS_ALLOWED_ORIGINS: corsOriginsFor(appOrigin),
         // Prefer live Ollama when available; override via process env if set.
         AI_PROVIDER: process.env.AI_PROVIDER || "ollama",
