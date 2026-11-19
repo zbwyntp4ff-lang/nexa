@@ -25,6 +25,7 @@ def _public_beta_env(monkeypatch, **extra: str) -> Settings:
     monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.setenv("NEXA_STORAGE_MODE", "persistent")
     monkeypatch.setenv("TOKENS_ENFORCE", "true")
+    monkeypatch.setenv("TRUSTED_EDGE_RATE_LIMIT_ENABLED", "true")
     monkeypatch.setenv("AUTH_SKIP_EMAIL_VERIFICATION", "false")
     monkeypatch.setenv("AUTH_COOKIE_SECURE", "true")
     monkeypatch.setenv("AUTH_SINGLE_USER", "false")
@@ -47,6 +48,19 @@ def test_public_beta_profile_requires_safe_cloud(monkeypatch):
     settings = _public_beta_env(monkeypatch)
     assert is_public_cloud(settings) is True
     assert validate_production_settings(settings) == []
+
+
+def test_public_beta_requires_trusted_edge_and_nonzero_rate_limits(monkeypatch):
+    settings = _public_beta_env(
+        monkeypatch,
+        TRUSTED_EDGE_RATE_LIMIT_ENABLED="false",
+        API_RATE_LIMIT_PER_MINUTE="0",
+        REGISTER_RATE_LIMIT_PER_HOUR="0",
+    )
+    problems = validate_production_settings(settings)
+    assert any("TRUSTED_EDGE_RATE_LIMIT_ENABLED" in p for p in problems)
+    assert any("API_RATE_LIMIT_PER_MINUTE" in p for p in problems)
+    assert any("REGISTER_RATE_LIMIT_PER_HOUR" in p for p in problems)
 
 
 def test_public_beta_rejects_free_model_and_desktop(monkeypatch):
