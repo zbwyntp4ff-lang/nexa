@@ -37,3 +37,21 @@ The shipped `deploy/Caddyfile` only reverse-proxies. Adding `rate_limit` require
 **non-standard** Caddy build (`xcaddy` + plugin). That is intentionally **not**
 vendored here so the Docker image stays on distro Caddy. Use an external edge
 or rebuild Caddy out-of-band if you need native Caddy limits.
+
+
+## Ready-to-adapt Nginx edge template
+
+The repository now includes:
+- `deploy/nginx-edge.conf.example` — TLS reverse proxy with a general API limit and stricter limits for login, registration, password recovery, email verification, device login and passkey login.
+- `deploy/nginx-proxy-headers.conf.example` — forwarded headers for the upstream NEXA Caddy container.
+
+This is a **template, not an active deployment**. Before use:
+
+1. Put NEXA Caddy behind Nginx and publish only Nginx's HTTPS port. Bind the Docker port to loopback, e.g. `127.0.0.1:8080:8080`; do not expose the Caddy container port publicly.
+2. Copy `nginx-proxy-headers.conf.example` to `/etc/nginx/snippets/nexa-proxy-headers.conf`.
+3. Replace `nexa.example.com` and the certificate paths in `nginx-edge.conf.example`.
+4. Include the edge config from the Nginx `http` context. The `limit_req_zone` directives must remain in the `http` context.
+5. If Cloudflare is in front, first configure Nginx Real IP using **only** Cloudflare's currently published IPv4/IPv6 ranges and `CF-Connecting-IP`. Do not trust forwarded client-IP headers from arbitrary sources. Without that allow-list, all requests may appear to come from Cloudflare and share one limit bucket.
+6. Run `nginx -t`, reload Nginx, then test 429 responses from separate client IPs and verify the application receives the expected scheme/host.
+
+The sample thresholds are conservative starting points, not load-tested production values. Tune them after observing legitimate traffic and AI/SSE request patterns. This config does not enable multi-worker support: keep one NEXA API process and one app instance until shared transactional storage and distributed queues/limits exist.
