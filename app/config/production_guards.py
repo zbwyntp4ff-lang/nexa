@@ -138,6 +138,16 @@ def _public_cloud_problems(settings: Settings, *, label: str) -> list[str]:
 
     problems: list[str] = []
 
+    if not settings.trusted_edge_rate_limit_enabled:
+        problems.append(
+            "TRUSTED_EDGE_RATE_LIMIT_ENABLED must be true only after a trusted CDN/WAF "
+            "or reverse proxy enforces distributed rate limits"
+        )
+    if settings.api_rate_limit_per_minute <= 0:
+        problems.append("API_RATE_LIMIT_PER_MINUTE must be greater than zero")
+    if settings.register_rate_limit_per_hour <= 0:
+        problems.append("REGISTER_RATE_LIMIT_PER_HOUR must be greater than zero")
+
     if not settings.tokens_enforce:
 
         problems.append(
