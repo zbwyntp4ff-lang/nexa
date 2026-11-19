@@ -65,8 +65,6 @@ class AuthStore:
             self._by_username[user.username.lower()] = user.id
             if user.oauth_provider and user.oauth_subject:
                 self._by_oauth[f"{user.oauth_provider}:{user.oauth_subject}"] = user.id
-        if dirty:
-            self._flush()
         for entry in raw.get("verifications", []):
             item = EmailVerificationRecord.model_validate(entry)
             self._verifications[item.id] = item
@@ -88,7 +86,7 @@ class AuthStore:
         for entry in raw.get("passkey_challenges", []):
             item = PasskeyChallengeRecord.model_validate(entry)
             self._passkey_challenges[item.challenge] = item
-        if legacy_device_tokens:
+        if dirty or legacy_device_tokens:
             self._flush()
 
     def _flush(self) -> None:
