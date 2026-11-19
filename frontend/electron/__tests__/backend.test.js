@@ -114,11 +114,11 @@ describe("resolveDesktopStorageEnv", () => {
     expect(env.PLUGIN_STORE_PATH).toBe(path.join(dataDir, "plugin_store.json"));
     expect(env.PLUGIN_KEY_PATH).toBe(path.join(dataDir, "plugin.key"));
     expect(env.MEMORY_STORE_PATH).toBe(path.join(dataDir, "memory_store.json"));
-    expect(env.AGENT_WORKSPACE_DIR).toBe(path.join(userData, "agent_workspace"));
+    expect(env.AGENT_WORKSPACE_DIR).toBe(path.join(dataDir, "agent_workspace"));
     expect(env.ATTACHMENT_STORAGE_DIR).toBe(path.join(dataDir, "attachments_tmp"));
     expect(env.VIDEO_STORAGE_DIR).toBe(path.join(dataDir, "videos"));
     expect(env.OAUTH_CREDENTIALS_DIR).toBe(path.join(dataDir, "oauth"));
-    expect(env.DATABASE_URL).toBe(`sqlite:///${path.join(dataDir, "nexa.db").replace(/\\\\/g, "/")}`);
+    expect(env.DATABASE_URL).toBe(`sqlite:///${path.join(dataDir, "nexa.db").replace(/\\/g, "/")}`);
   });
 
   it("preserves an explicitly configured external database URL", () => {
