@@ -16,6 +16,7 @@ import {
   resolveBackendCwd,
   resolvePythonExecutable,
   resolveDesktopStorageEnv,
+  migrateLegacyData,
 } from "../backend.js";
 describe("resolveBackendCwd", () => {
   it("resolves the repo root two levels above electron/ in dev mode", () => {
@@ -124,5 +125,33 @@ describe("resolveDesktopStorageEnv", () => {
   it("preserves an explicitly configured external database URL", () => {
     const url = "postgresql://db.example/nexa";
     expect(resolveDesktopStorageEnv("/tmp/nexa-user", { DATABASE_URL: url }).DATABASE_URL).toBe(url);
+  });
+});
+
+
+describe("migrateLegacyData", () => {
+  it("moves legacy stores and workspaces only when the userData copy is missing", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "nexa-legacy-"));
+    const userData = fs.mkdtempSync(path.join(os.tmpdir(), "nexa-user-"));
+    const legacyData = path.join(root, "data");
+    fs.mkdirSync(legacyData, { recursive: true });
+    fs.writeFileSync(path.join(legacyData, "auth_store.json"), "legacy-auth");
+    fs.writeFileSync(path.join(legacyData, "plugin.key"), "legacy-key");
+    fs.mkdirSync(path.join(legacyData, "videos"), { recursive: true });
+    fs.writeFileSync(path.join(legacyData, "videos", "clip.mp4"), "video");
+    fs.mkdirSync(path.join(root, "agent_workspace"), { recursive: true });
+    fs.writeFileSync(path.join(root, "agent_workspace", "note.txt"), "workspace");
+
+    const targetData = path.join(userData, "data");
+    fs.mkdirSync(targetData, { recursive: true });
+    fs.writeFileSync(path.join(targetData, "auth_store.json"), "newer-auth");
+    const messages = [];
+    migrateLegacyData({ legacyRoot: root, userDataDir: userData, onLog: (message) => messages.push(message) });
+
+    expect(fs.readFileSync(path.join(targetData, "auth_store.json"), "utf8")).toBe("newer-auth");
+    expect(fs.readFileSync(path.join(targetData, "plugin.key"), "utf8")).toBe("legacy-key");
+    expect(fs.readFileSync(path.join(targetData, "videos", "clip.mp4"), "utf8")).toBe("video");
+    expect(fs.readFileSync(path.join(targetData, "agent_workspace", "note.txt"), "utf8")).toBe("workspace");
+    expect(messages).toContain("Migrated desktop data: data/plugin.key");
   });
 });
