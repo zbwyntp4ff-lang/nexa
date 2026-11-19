@@ -141,6 +141,14 @@ class AuthStore:
             self._sessions = {
                 sid: s for sid, s in self._sessions.items() if s.user_id != user_id
             }
+            self._devices = {
+                code: d for code, d in self._devices.items() if d.user_id != user_id
+            }
+            self._passkey_challenges = {
+                challenge: item
+                for challenge, item in self._passkey_challenges.items()
+                if item.user_id != user_id
+            }
             self._flush()
             return True
 
