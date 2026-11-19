@@ -597,3 +597,32 @@ def test_auth_store_migrates_legacy_plaintext_device_tokens(tmp_path: Path):
     assert "legacy-plaintext-bearer-token" not in persisted
     assert store.get_device("legacy-device-code") is None
 
+def test_auth_store_email_repair_preserves_sessions_and_pending_devices(tmp_path: Path):
+    import json
+    from datetime import timedelta
+    from app.auth.models import DeviceLoginRecord, SessionRecord, UserRecord, utcnow
+
+    store_path = tmp_path / "auth.json"
+    user = UserRecord(
+        id="user-1", first_name="Test", last_name="User", username="test_user",
+        email="•test@example.com", password_hash="unused",
+    )
+    expiry = utcnow() + timedelta(minutes=5)
+    raw = {
+        "users": [user.model_dump(mode="json")],
+        "verifications": [],
+        "sessions": [SessionRecord(
+            id="session-1", user_id="user-1", token_hash="hashed-token", expires_at=expiry
+        ).model_dump(mode="json")],
+        "devices": [DeviceLoginRecord(
+            device_code="pending-device", user_code="AAAA-BBBB", expires_at=expiry
+        ).model_dump(mode="json")],
+        "oauth_states": [], "passkey_challenges": [],
+    }
+    store_path.write_text(json.dumps(raw), encoding="utf-8")
+
+    store = AuthStore(store_path)
+    assert store.get_user("user-1").email == "test@example.com"
+    assert store.get_session("session-1") is not None
+    assert store.get_device("pending-device") is not None
+
