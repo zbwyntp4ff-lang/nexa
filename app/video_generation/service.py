@@ -60,13 +60,28 @@ class VideoJobStore:
                     user_id = item.get("user_id")
                     if user_id is not None and not isinstance(user_id, str):
                         raise ValueError("invalid video job owner")
+                    if status.phase == "ready":
+                        filename = Path(urlparse(status.video_url or "").path).name
+                        local_path = self._storage_dir / filename if filename else None
+                        if (
+                            not status.video_url
+                            or not urlparse(status.video_url).path.startswith("/api/v1/video/files/")
+                            or local_path is None
+                            or not local_path.is_file()
+                            or local_path.is_symlink()
+                        ):
+                            status = status.model_copy(update={
+                                "phase": "failed",
+                                "progress": 100,
+                                "message": "Video result is unavailable after a server restart.",
+                                "video_url": None,
+                            })
                     if status.phase not in {"ready", "failed"}:
                         status = status.model_copy(update={
                             "phase": "failed",
                             "progress": 100,
                             "message": "Generation was interrupted by a server restart.",
-                            "error": "Generation was interrupted by a server restart.",
-                            "motion_plan": None,
+                            "video_url": None,
                         })
                     self._jobs[job_id] = _Job(status=status, user_id=user_id)
             except Exception as exc:
@@ -82,7 +97,42 @@ class VideoJobStore:
         # and provider error details are intentionally excluded.
         entries = []
         for job_id, job in self._jobs.items():
-            status = job.status.model_copy(update={"motion_plan": None, "error": None})
+            current = job.status
+            message = (
+                "Video ready" if current.phase == "ready"
+                else "Video generation failed."
+            )
+            video_url = current.video_url
+            parsed = urlparse(video_url or "")
+            filename = Path(parsed.path).name
+            is_local_result = (
+                parsed.path.startswith("/api/v1/video/files/")
+                and filename
+                and parsed.path == f"/api/v1/video/files/{filename}"
+                and not parsed.query
+                and not parsed.fragment
+            )
+            if current.phase == "ready" and not is_local_result:
+                # Do not persist provider-signed URLs or remote credentials.
+                message = "Video result is unavailable after a server restart."
+                safe_phase = "failed"
+                video_url = None
+                progress = 100
+            else:
+                safe_phase = current.phase
+                progress = current.progress
+                if safe_phase not in {"ready", "failed"}:
+                    message = "Generation was interrupted by a server restart."
+            status = VideoJobStatus(
+                job_id=job_id,
+                phase=safe_phase,
+                progress=progress,
+                message=message,
+                intent=current.intent,
+                video_url=video_url if is_local_result else None,
+                provider=current.provider,
+                model=current.model,
+            )
             entries.append({
                 "user_id": job.user_id,
                 "status": status.model_dump(mode="json"),
