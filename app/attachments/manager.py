@@ -18,6 +18,9 @@ Design notes (security / privacy, per Part 8 spec):
 """
 from __future__ import annotations
 import asyncio
+import json
+import os
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -25,7 +28,7 @@ from functools import lru_cache
 from pathlib import Path
 from app.attachments.chunking import chunk_text, select_relevant_chunks
 from app.attachments.models import AttachmentKind, AttachmentRecord, AttachmentStatus
-from app.attachments.validation import validate_upload
+from app.attachments.validation import IMAGE_EXTENSIONS, validate_upload
 from app.config.settings import Settings, get_settings
 from app.core.logging_config import get_logger
 from app.core.paths import resolve_under_project_root
@@ -70,6 +73,65 @@ class AttachmentManager:
         self._records: dict[str, _Stored] = {}
         self._active_jobs = 0
         self._active_lock = asyncio.Lock()
+        self._restore_persisted_images()
+
+    def _metadata_path(self, attachment_id: str) -> Path:
+        return self._storage_dir / f"{attachment_id}.meta.json"
+
+    def _persist_image(self, stored: _Stored) -> None:
+        """Persist ownership metadata for image bytes, never document contents."""
+        metadata_path = self._metadata_path(stored.record.id)
+        temporary_path = metadata_path.with_name(metadata_path.name + ".tmp")
+        temporary_path.write_text(
+            stored.record.model_dump_json(), encoding="utf-8"
+        )
+        os.chmod(temporary_path, 0o600)
+        os.replace(temporary_path, metadata_path)
+
+    def _restore_persisted_images(self) -> None:
+        """Restore unexpired image records and remove unowned/orphaned image files."""
+        restored: set[str] = set()
+        for metadata_path in self._storage_dir.glob("*.meta.json"):
+            attachment_id = metadata_path.name[:-10]
+            if not re.fullmatch(r"[0-9a-f]{32}", attachment_id):
+                continue
+            image_path: Path | None = None
+            try:
+                record = AttachmentRecord.model_validate_json(
+                    metadata_path.read_text(encoding="utf-8")
+                )
+                if (
+                    record.id != attachment_id
+                    or record.kind != AttachmentKind.IMAGE
+                    or record.status != AttachmentStatus.READY
+                    or record.format not in IMAGE_EXTENSIONS
+                    or record.expires_at is None
+                ):
+                    raise ValueError("invalid persisted image metadata")
+                image_path = self._storage_dir / f"{attachment_id}.{record.format}"
+                if (
+                    image_path.is_symlink()
+                    or not image_path.is_file()
+                    or image_path.stat().st_size != record.size_bytes
+                    or record.expires_at.timestamp() <= time.time()
+                ):
+                    raise ValueError("missing, expired, or invalid persisted image")
+                self._records[attachment_id] = _Stored(
+                    record=record,
+                    extension=record.format,
+                    temp_path=image_path,
+                )
+                restored.add(attachment_id)
+            except Exception:
+                metadata_path.unlink(missing_ok=True)
+                if image_path is not None and image_path.is_file() and not image_path.is_symlink():
+                    image_path.unlink(missing_ok=True)
+        # A crash between writing image bytes and its metadata leaves an orphan.
+        for extension in IMAGE_EXTENSIONS:
+            for image_path in self._storage_dir.glob(f"*.{extension}"):
+                if re.fullmatch(r"[0-9a-f]{32}", image_path.stem) and image_path.stem not in restored:
+                    if not image_path.is_symlink():
+                        image_path.unlink(missing_ok=True)
     # --- lifecycle -----------------------------------------------------------
     def cleanup_expired(self) -> int:
         """Delete expired attachments (temp files + in-memory record). Returns count removed."""
@@ -88,6 +150,8 @@ class AttachmentManager:
         stored = self._records.pop(attachment_id, None)
         if stored and stored.temp_path and stored.temp_path.exists():
             stored.temp_path.unlink(missing_ok=True)
+        if stored:
+            self._metadata_path(attachment_id).unlink(missing_ok=True)
     # --- upload pipeline -------------------------------------------------------
     def _owned(self, stored: _Stored, user_id: str | None) -> bool:
         """True when ``user_id`` may access the record (None = no ownership filter)."""
@@ -124,9 +188,11 @@ class AttachmentManager:
         try:
             temp_path = self._storage_dir / f"{attachment_id}.{extension}"
             temp_path.write_bytes(raw)
+            os.chmod(temp_path, 0o600)
             stored.temp_path = temp_path
             if kind == AttachmentKind.IMAGE:
                 stored.record.status = AttachmentStatus.READY
+                self._persist_image(stored)
                 logger.info("attachment ready id=%s kind=image format=%s size=%d", attachment_id, extension, len(raw))
             else:
                 await self._process_document(stored, raw, extension)
