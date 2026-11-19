@@ -52,7 +52,7 @@ class DeviceLoginRecord(BaseModel):
     user_code: str
     status: Literal["pending", "approved", "expired", "denied"] = "pending"
     user_id: str | None = None
-    session_token: str | None = None
+    session_token: str | None = Field(default=None, exclude=True, repr=False)
     created_at: datetime = Field(default_factory=utcnow)
     expires_at: datetime
     approved_at: datetime | None = None
