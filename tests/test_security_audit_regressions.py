@@ -80,3 +80,26 @@ def test_apple_form_post_callback_uses_oauth_state_instead_of_cookie_origin():
         )
     assert response.status_code == 302
 
+def test_workflow_approval_admin_guard_rejects_non_owner():
+    from types import SimpleNamespace
+    from fastapi import HTTPException
+    from app.api.routes.workflow import require_workflow_admin
+
+    user = SimpleNamespace(id="member-123")
+    auth = SimpleNamespace(is_owner=lambda candidate: False)
+    settings = SimpleNamespace(tokens_enforce=True)
+    with pytest.raises(HTTPException) as exc:
+        require_workflow_admin(user=user, auth=auth, settings=settings)
+    assert exc.value.status_code == 403
+
+
+def test_workflow_approval_admin_guard_requires_auth_when_enforced():
+    from fastapi import HTTPException
+    from app.api.routes.workflow import require_workflow_admin
+
+    auth = SimpleNamespace(is_owner=lambda candidate: False)
+    settings = SimpleNamespace(tokens_enforce=True)
+    with pytest.raises(HTTPException) as exc:
+        require_workflow_admin(user=None, auth=auth, settings=settings)
+    assert exc.value.status_code == 401
+
