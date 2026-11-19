@@ -195,8 +195,8 @@ class AttachmentManager:
             self._active_jobs += 1
         try:
             temp_path = self._storage_dir / f"{attachment_id}.{extension}"
-            temp_path.write_bytes(raw)
             stored.temp_path = temp_path
+            temp_path.write_bytes(raw)
             os.chmod(temp_path, 0o600)
             if kind == AttachmentKind.IMAGE:
                 stored.record.status = AttachmentStatus.READY
