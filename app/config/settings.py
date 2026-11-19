@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     memory_backend: str = Field(default="sql", alias="MEMORY_BACKEND")
     # API-wide rate limit (per IP / minute). 0 disables.
     api_rate_limit_per_minute: int = Field(default=120, alias="API_RATE_LIMIT_PER_MINUTE")
+    # Operator assertion: a trusted CDN/WAF/reverse proxy enforces distributed edge limits.
+    trusted_edge_rate_limit_enabled: bool = Field(
+        default=False, alias="TRUSTED_EDGE_RATE_LIMIT_ENABLED"
+    )
     # Free / smoke-test mode: tighter caps (does not invent token usage).
     free_tier_mode: bool = Field(default=False, alias="FREE_TIER_MODE")
     free_tier_daily_chat_cap: int = Field(default=50, alias="FREE_TIER_DAILY_CHAT_CAP")
