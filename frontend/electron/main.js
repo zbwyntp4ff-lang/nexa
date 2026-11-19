@@ -10,12 +10,12 @@
 "use strict";
 const path = require("node:path");
 const { app, BrowserWindow, Menu, Tray, shell, ipcMain, dialog, session } = require("electron");
-const { BackendManager, DEFAULT_BACKEND_URL, resolveDesktopStorageEnv, migrateLegacyData } = require("./backend");
+const { BackendManager, DEFAULT_BACKEND_URL, resolveDesktopStorageEnv, migrateLegacyData, normalizeLoopbackBackendUrl } = require("./backend");
 const { createLogger } = require("./log");
 const { startStaticServer } = require("./static-server");
 const FRONTEND_DEV_URL = "http://localhost:4820";
 const configuredBackendUrl = process.env.NEXA_BACKEND_URL || DEFAULT_BACKEND_URL;
-const BACKEND_URL = configuredBackendUrl.replace(/^http:\/\/127\\.0\\.0\\.1(?=:)/, "http://localhost");
+const BACKEND_URL = normalizeLoopbackBackendUrl(configuredBackendUrl);
 const NEXA_BG_COLOR = "#0b0b12"; // matches NEXA's black/purple theme (globals.css)
 let mainWindow = null;
 let tray = null;
