@@ -38,7 +38,7 @@ This document separates **verified facts**, **automated checks**, **manual/stagi
 
 ### Still operational (not fully automated)
 - Invite-only vs fully open marketing policy
-- Edge rate limits (CDN/WAF) beyond in-process windows — now a hard startup gate via TRUSTED_EDGE_RATE_LIMIT_ENABLED
+- Edge rate limits (CDN/WAF) beyond in-process windows — now a hard startup gate via TRUSTED_EDGE_RATE_LIMIT_ENABLED; public hosting also rejects in-memory workflows and worker counts other than 1
 - Stripe live onboarding / legal entity
 - Manual Electron LAN/XSS probe
 - **Real staging deploy + SMTP mailbox + paid/named model credentials**
@@ -74,6 +74,7 @@ OPENROUTER_API_KEY=<secret>           # must authorize the named model
 MEMORY_BACKEND=sql
 DATABASE_URL=sqlite:///data/nexa-staging.db   # or Postgres
 WORKFLOWS_ENABLED=false
+WEB_CONCURRENCY=1
 AGENT_MAX_PARALLEL_PER_USER=2
 NEXA_AI_KILL_SWITCH=false
 ALLOW_MODEL_FALLBACK=false
