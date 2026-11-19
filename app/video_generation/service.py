@@ -216,7 +216,7 @@ class VideoJobStore:
                 job.task.cancel()
             video_url = job.status.video_url or ""
             filename = Path(urlparse(video_url).path).name
-        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}\.(?:mp4|webm|mov)", filename, re.IGNORECASE):
+            if filename and re.fullmatch(r"[A-Za-z0-9_-]{1,64}\.(?:mp4|webm|mov)", filename, re.IGNORECASE):
                 candidate = root / filename
                 if candidate.is_symlink():
                     candidate.unlink(missing_ok=True)
