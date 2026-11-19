@@ -17,6 +17,7 @@ from app.attachments.manager import AttachmentManager
 from app.billing.entitlements import EntitlementService
 from app.billing.errors import EntitlementDeniedError
 from app.config.settings import Settings
+from app.core.paths import resolve_under_project_root
 from app.models.errors import AttachmentNotFoundError, ModelError, ProviderConfigurationError
 from app.video_generation.base import ImageToVideoProvider
 from app.video_generation.intent import detects_image_to_video
@@ -317,7 +318,7 @@ class ImageToVideoService:
                 on_progress=on_progress,
             )
             self._store.record_video_file(
-                job_id, user_id, result.local_path, Path(self._settings.video_storage_dir)
+                job_id, user_id, result.local_path, Path(resolve_under_project_root(self._settings.video_storage_dir))
             )
             result.motion_plan = plan
             await self._store.update(
