@@ -540,3 +540,41 @@ async def test_attachment_content_isolated_between_users(tmp_path):
     assert manager.has_images([image.id], user_id="bob") is False
     assert manager.image_payloads([image.id], user_id="bob") == []
     assert len(manager.image_payloads([image.id], user_id="alice")) == 1
+
+async def test_image_attachment_ownership_survives_manager_restart(tmp_path):
+    storage_dir = tmp_path / "attachments_tmp"
+    first = _manager(tmp_path, storage_dir=storage_dir)
+    record = await first.upload("private.png", _PNG_BYTES, user_id="user-a")
+
+    restarted = _manager(tmp_path, storage_dir=storage_dir)
+    assert restarted.get(record.id, user_id="user-a").id == record.id
+    with pytest.raises(AttachmentNotFoundError):
+        restarted.get(record.id, user_id="user-b")
+    payloads = restarted.image_payloads([record.id], user_id="user-a")
+    assert payloads == [(_PNG_BYTES, "image/png")]
+
+    assert restarted.delete_user("user-a") == 1
+    assert not (storage_dir / f"{record.id}.png").exists()
+    assert not (storage_dir / f"{record.id}.meta.json").exists()
+
+
+def test_attachment_startup_removes_orphaned_image_files(tmp_path):
+    storage_dir = tmp_path / "attachments_tmp"
+    storage_dir.mkdir()
+    orphan = storage_dir / ("a" * 32 + ".png")
+    orphan.write_bytes(_PNG_BYTES)
+
+    _manager(tmp_path, storage_dir=storage_dir)
+
+    assert not orphan.exists()
+
+
+async def test_document_attachment_is_not_restored_after_restart(tmp_path):
+    storage_dir = tmp_path / "attachments_tmp"
+    first = _manager(tmp_path, storage_dir=storage_dir)
+    record = await first.upload("private.txt", b"private document text", user_id="user-a")
+
+    restarted = _manager(tmp_path, storage_dir=storage_dir)
+    with pytest.raises(AttachmentNotFoundError):
+        restarted.get(record.id, user_id="user-a")
+
