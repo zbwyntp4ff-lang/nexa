@@ -95,3 +95,23 @@ benchmarks support that claim.
 5. Curated domain corpus and held-out benchmarks.
 6. Fine-tuning experiments only after data rights and baseline metrics are
    reviewed.
+
+## HEXA Math: first implementation
+
+The API tool registry now includes `math_solver`, backed by SymPy. It supports:
+
+- Safe expression parsing through an explicit Python-AST allowlist (no
+  `eval`, `exec`, `sympify`, or `parse_expr` on user text).
+- Simplification, symbolic differentiation, indefinite integration,
+  polynomial equation solving, and numeric substitution.
+- A limited function set (`sqrt`, trigonometric and inverse trigonometric
+  functions, `exp`, `log`, `abs`) and constants `pi` and `E`.
+- Expression length, AST node/depth, variable-count, exponent, polynomial
+  degree, and output-size limits.
+
+This is a first symbolic mathematics engine, not yet a full computer algebra
+system or proof assistant. It does not currently provide units, matrices,
+linear algebra workflows, differential-equation solvers, statistics,
+numerical optimization, or verified theorem proving. Those require separate
+validated operations and tests. Do not treat a symbolic result as a proof
+without checking its assumptions and domain.
