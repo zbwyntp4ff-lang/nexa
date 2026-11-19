@@ -17,12 +17,16 @@ import {
   resolvePythonExecutable,
   resolveDesktopStorageEnv,
   migrateLegacyData,
+  DEFAULT_BACKEND_URL,
 } from "../backend.js";
 describe("resolveBackendCwd", () => {
   it("resolves the repo root two levels above electron/ in dev mode", () => {
     const electronDir = "/workspace/frontend/electron";
     const cwd = resolveBackendCwd({ isPackaged: false, electronDir });
     expect(cwd).toBe(path.join(electronDir, "..", ".."));
+  });
+  it("uses localhost as the default backend host for cookie same-site consistency", () => {
+    expect(DEFAULT_BACKEND_URL).toBe("http://localhost:8420");
   });
   it("resolves resourcesPath/backend when packaged", () => {
     const cwd = resolveBackendCwd({ isPackaged: true, resourcesPath: "/opt/NEXA/resources" });
