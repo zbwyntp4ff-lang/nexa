@@ -197,12 +197,18 @@ async def _download_video(
         ext = ".mp4"
     name = f"{safe_stem}{ext}"
     path = output_dir / name
-    async with client.stream("GET", url) as resp:
-        if resp.status_code >= 400:
-            raise ModelError(f"Failed to download video ({resp.status_code}).")
-        with path.open("wb") as fh:
-            async for chunk in resp.aiter_bytes():
-                fh.write(chunk)
+    try:
+        async with client.stream("GET", url) as resp:
+            if resp.status_code >= 400:
+                raise ModelError(f"Failed to download video ({resp.status_code}).")
+            with path.open("wb") as fh:
+                async for chunk in resp.aiter_bytes():
+                    fh.write(chunk)
+    except BaseException:
+        # Cancellation during account deletion or shutdown must not leave a
+        # partial video artifact on disk.
+        path.unlink(missing_ok=True)
+        raise
     if path.stat().st_size < 64:
         raise ModelError("Downloaded video file is empty or corrupt.")
     return path, name
