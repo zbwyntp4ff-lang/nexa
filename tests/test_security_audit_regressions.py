@@ -44,3 +44,39 @@ def test_secret_redaction_covers_bearer_assignments_and_private_keys():
     assert "abc.def.ghi" not in redacted
     assert "nexa_test_credential_12345" not in redacted
     assert "not-a-real-private-key" not in redacted
+
+def test_cookie_authenticated_writes_reject_untrusted_origins():
+    with TestClient(app) as client:
+        blocked = client.post(
+            "/api/v1/auth/logout",
+            headers={
+                "Cookie": "nexa_session=not-a-real-session",
+                "Origin": "https://attacker.example",
+            },
+        )
+        assert blocked.status_code == 403
+        assert blocked.json()["error"] == "csrf_origin_rejected"
+
+        allowed = client.post(
+            "/api/v1/auth/logout",
+            headers={
+                "Cookie": "nexa_session=not-a-real-session",
+                "Origin": "http://localhost:4820",
+            },
+        )
+        assert allowed.status_code == 200
+
+
+def test_apple_form_post_callback_uses_oauth_state_instead_of_cookie_origin():
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/auth/oauth/apple/callback",
+            data={"error": "access_denied"},
+            headers={
+                "Cookie": "nexa_session=not-a-real-session",
+                "Origin": "https://appleid.apple.com",
+            },
+            follow_redirects=False,
+        )
+    assert response.status_code == 302
+
