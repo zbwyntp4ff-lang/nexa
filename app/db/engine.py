@@ -76,6 +76,28 @@ class Database:
             ON memory_items (user_id, updated_at DESC);
         CREATE INDEX IF NOT EXISTS idx_memory_type
             ON memory_items (type);
+        CREATE TABLE IF NOT EXISTS attachments (
+            id TEXT PRIMARY KEY,
+            user_id TEXT,
+            record_json TEXT NOT NULL,
+            text_content TEXT,
+            chunks_json TEXT NOT NULL,
+            storage_filename TEXT,
+            expires_at DOUBLE PRECISION
+        );
+        CREATE INDEX IF NOT EXISTS idx_attachments_user
+            ON attachments (user_id, expires_at);
+        CREATE INDEX IF NOT EXISTS idx_attachments_expiry
+            ON attachments (expires_at);
+        CREATE TABLE IF NOT EXISTS video_jobs (
+            job_id TEXT PRIMARY KEY,
+            user_id TEXT,
+            status_json TEXT NOT NULL,
+            created_at DOUBLE PRECISION NOT NULL,
+            updated_at DOUBLE PRECISION NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_video_jobs_user
+            ON video_jobs (user_id, updated_at DESC);
         """
         with self._lock:
             if self._pg:

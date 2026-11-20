@@ -30,6 +30,8 @@ from functools import lru_cache
 from pathlib import Path
 from app.attachments.chunking import chunk_text, select_relevant_chunks
 from app.attachments.models import AttachmentKind, AttachmentRecord, AttachmentStatus
+from app.attachments.sql_store import SqlAttachmentStore
+from app.db.engine import get_database
 from app.attachments.validation import validate_upload
 from app.config.settings import Settings, get_settings
 from app.core.logging_config import get_logger
@@ -62,6 +64,7 @@ class AttachmentManager:
         max_concurrent_jobs: int,
         ttl_seconds: float,
         context_max_chars: int,
+        store: SqlAttachmentStore | None = None,
     ) -> None:
         self._storage_dir = storage_dir
         self._storage_dir.mkdir(parents=True, exist_ok=True)
@@ -74,6 +77,7 @@ class AttachmentManager:
         self._max_concurrent = max_concurrent_jobs
         self._ttl = ttl_seconds
         self._context_max_chars = context_max_chars
+        self._store = store
         self._records: dict[str, _Stored] = {}
         self._active_jobs = 0
         self._active_lock = asyncio.Lock()
@@ -87,6 +91,8 @@ class AttachmentManager:
             if stored.record.expires_at is not None and stored.record.expires_at.timestamp() < now
         }
         manifest = self._read_manifest()
+        if self._store is not None:
+            expired.update(self._store.expired_ids(now))
         for attachment_id, entry in manifest.items():
             try:
                 if float(entry["expires_at"]) < now:
@@ -178,8 +184,54 @@ class AttachmentManager:
             return None
         return candidate
 
+    def _save_stored(self, stored: _Stored) -> None:
+        if self._store is None:
+            return
+        filename = stored.temp_path.name if stored.temp_path is not None else None
+        self._store.save(
+            stored.record,
+            text=stored.text,
+            chunks=stored.chunks,
+            storage_filename=filename,
+        )
+
+    def _load_stored(self, attachment_id: str, user_id: str | None = None) -> _Stored | None:
+        cached = self._records.get(attachment_id)
+        if cached is not None:
+            return cached if self._owned(cached, user_id) else None
+        if self._store is None:
+            return None
+        row = self._store.get(attachment_id, user_id=user_id)
+        if row is None:
+            return None
+        record = row["record"]
+        temp_path = None
+        filename = row.get("storage_filename")
+        if filename:
+            if not isinstance(filename, str) or Path(filename).name != filename:
+                return None
+            candidate = self._storage_dir / filename
+            try:
+                if candidate.is_symlink() or candidate.resolve().parent != self._storage_dir.resolve():
+                    return None
+            except OSError:
+                return None
+            if candidate.is_file():
+                temp_path = candidate
+        stored = _Stored(
+            record=record,
+            extension=record.format,
+            text=row.get("text"),
+            chunks=row.get("chunks") or [],
+            temp_path=temp_path,
+        )
+        self._records[attachment_id] = stored
+        return stored
+
     def _discard(self, attachment_id: str) -> None:
         stored = self._records.pop(attachment_id, None)
+        if self._store is not None:
+            self._store.delete(attachment_id)
         if stored and stored.temp_path:
             stored.temp_path.unlink(missing_ok=True)
         manifest = self._read_manifest()
@@ -219,6 +271,7 @@ class AttachmentManager:
         )
         stored = _Stored(record=record, extension=extension)
         self._records[attachment_id] = stored
+        self._save_stored(stored)
         async with self._active_lock:
             if self._active_jobs >= self._max_concurrent:
                 self._fail(stored, "Too many attachments are being processed right now. Try again shortly.")
@@ -235,6 +288,7 @@ class AttachmentManager:
                 raise
             if kind == AttachmentKind.IMAGE:
                 stored.record.status = AttachmentStatus.READY
+                self._save_stored(stored)
                 logger.info("attachment ready id=%s kind=image format=%s size=%d", attachment_id, extension, len(raw))
             else:
                 await self._process_document(stored, raw, extension)
@@ -246,6 +300,7 @@ class AttachmentManager:
         finally:
             async with self._active_lock:
                 self._active_jobs -= 1
+        self._save_stored(stored)
         return stored.record.model_copy()
     async def _process_document(self, stored: _Stored, raw: bytes, extension: str) -> None:
         loop = asyncio.get_running_loop()
@@ -266,6 +321,7 @@ class AttachmentManager:
         stored.record.page_count = parsed.metadata.get("page_count")
         stored.record.truncated = bool(parsed.metadata.get("truncated", False))
         stored.record.text_preview = parsed.text[:500]
+        self._save_stored(stored)
         logger.info(
             "attachment ready id=%s kind=document format=%s chars=%d chunks=%d",
             stored.record.id,
@@ -281,12 +337,13 @@ class AttachmentManager:
     def _fail(self, stored: _Stored, message: str) -> None:
         stored.record.status = AttachmentStatus.FAILED
         stored.record.error = message
+        self._save_stored(stored)
         logger.warning("attachment failed id=%s error=%s", stored.record.id, message)
     # --- retrieval -------------------------------------------------------------
     def get(self, attachment_id: str, *, user_id: str | None = None) -> AttachmentRecord:
         self.cleanup_expired()
-        stored = self._records.get(attachment_id)
-        if stored is None or not self._owned(stored, user_id):
+        stored = self._load_stored(attachment_id, user_id)
+        if stored is None:
             raise AttachmentNotFoundError(attachment_id)
         return stored.record.model_copy()
     def get_text(self, attachment_id: str, *, user_id: str | None = None) -> str:
@@ -295,12 +352,16 @@ class AttachmentManager:
             app.models.errors.AttachmentNotFoundError: If the id is unknown/expired.
         """
         self.cleanup_expired()
-        stored = self._records.get(attachment_id)
-        if stored is None or not self._owned(stored, user_id):
+        stored = self._load_stored(attachment_id, user_id)
+        if stored is None:
             raise AttachmentNotFoundError(attachment_id)
         return stored.text or ""
     def list(self, *, user_id: str | None = None) -> list[AttachmentRecord]:
         self.cleanup_expired()
+        if self._store is not None:
+            records = self._store.list(user_id=user_id)
+            for attachment_id in [row["record"].id for row in records]:
+                self._load_stored(attachment_id, user_id)
         return [
             stored.record.model_copy()
             for stored in self._records.values()
@@ -308,8 +369,8 @@ class AttachmentManager:
         ]
     def delete(self, attachment_id: str, *, user_id: str | None = None) -> None:
         self.cleanup_expired()
-        stored = self._records.get(attachment_id)
-        if stored is None or not self._owned(stored, user_id):
+        stored = self._load_stored(attachment_id, user_id)
+        if stored is None:
             raise AttachmentNotFoundError(attachment_id)
         self._discard(attachment_id)
 
@@ -319,6 +380,8 @@ class AttachmentManager:
         persisted_ids = {
             aid for aid, entry in manifest.items() if entry.get("user_id") == user_id
         }
+        if self._store is not None:
+            persisted_ids.update(row["record"].id for row in self._store.list(user_id=user_id))
         memory_ids = {
             aid for aid, stored in self._records.items()
             if stored.record.user_id == user_id
@@ -338,8 +401,8 @@ class AttachmentManager:
         self.cleanup_expired()
         records: list[AttachmentRecord] = []
         for attachment_id in attachment_ids:
-            stored = self._records.get(attachment_id)
-            if stored is None or not self._owned(stored, user_id):
+            stored = self._load_stored(attachment_id, user_id)
+            if stored is None:
                 raise AttachmentNotFoundError(attachment_id)
             records.append(stored.record)
         return records
@@ -354,8 +417,7 @@ class AttachmentManager:
         doc_ids = [
             attachment_id
             for attachment_id in attachment_ids
-            if (stored := self._records.get(attachment_id)) is not None
-            and self._owned(stored, user_id)
+            if (stored := self._load_stored(attachment_id, user_id)) is not None
             and stored.record.kind == AttachmentKind.DOCUMENT
             and stored.record.status == AttachmentStatus.READY
         ]
@@ -365,7 +427,9 @@ class AttachmentManager:
         parts: list[str] = []
         used = 0
         for attachment_id in doc_ids:
-            stored = self._records[attachment_id]
+            stored = self._load_stored(attachment_id, user_id)
+            if stored is None:
+                continue
             remaining = min(per_doc_budget, budget - used)
             if remaining <= 0:
                 break
@@ -381,8 +445,8 @@ class AttachmentManager:
         self.cleanup_expired()
         payloads: list[tuple[bytes, str]] = []
         for attachment_id in attachment_ids:
-            stored = self._records.get(attachment_id)
-            if stored is None or not self._owned(stored, user_id) or stored.record.kind != AttachmentKind.IMAGE:
+            stored = self._load_stored(attachment_id, user_id)
+            if stored is None or stored.record.kind != AttachmentKind.IMAGE:
                 continue
             if stored.record.status != AttachmentStatus.READY or stored.temp_path is None:
                 continue
@@ -391,8 +455,7 @@ class AttachmentManager:
     def has_images(self, attachment_ids: list[str], *, user_id: str | None = None) -> bool:
         self.cleanup_expired()
         return any(
-            (stored := self._records.get(attachment_id)) is not None
-            and self._owned(stored, user_id)
+            (stored := self._load_stored(attachment_id, user_id)) is not None
             and stored.record.kind == AttachmentKind.IMAGE
             for attachment_id in attachment_ids
         )
@@ -418,6 +481,7 @@ def build_attachment_manager(settings: Settings) -> AttachmentManager:
         max_concurrent_jobs=settings.max_concurrent_attachment_jobs,
         ttl_seconds=settings.attachment_ttl_seconds,
         context_max_chars=settings.attachment_context_max_chars,
+        store=SqlAttachmentStore(get_database()),
     )
 @lru_cache
 def get_attachment_manager() -> AttachmentManager:

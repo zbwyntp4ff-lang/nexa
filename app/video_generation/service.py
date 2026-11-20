@@ -17,6 +17,7 @@ from app.attachments.manager import AttachmentManager
 from app.billing.entitlements import EntitlementService
 from app.billing.errors import EntitlementDeniedError
 from app.config.settings import Settings
+from app.db.engine import Database, get_database
 from app.core.paths import resolve_under_project_root
 from app.models.errors import AttachmentNotFoundError, ModelError, ProviderConfigurationError
 from app.video_generation.base import ImageToVideoProvider
@@ -33,10 +34,57 @@ class _Job:
 
 
 class VideoJobStore:
-    def __init__(self) -> None:
+    def __init__(self, db: Database | None = None) -> None:
         self._jobs: dict[str, _Job] = {}
         self._lock = asyncio.Lock()
         self._manifest_lock = threading.RLock()
+        self._db = db
+
+    def _persist(self, job_id: str, job: _Job) -> None:
+        if self._db is None:
+            return
+        now = time.time()
+        self._db.execute(
+            """
+            INSERT INTO video_jobs (job_id, user_id, status_json, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(job_id) DO UPDATE SET
+              status_json = excluded.status_json,
+              updated_at = excluded.updated_at
+            WHERE video_jobs.user_id = excluded.user_id
+               OR (video_jobs.user_id IS NULL AND excluded.user_id IS NULL)
+            """,
+            (job_id, job.user_id, job.status.model_dump_json(), now, now),
+        )
+
+    def _load_persisted(self, job_id: str, user_id: str | None, enforce: bool) -> _Job | None:
+        if self._db is None:
+            return None
+        row = self._db.fetchone(
+            "SELECT user_id, status_json FROM video_jobs WHERE job_id = ?",
+            (job_id,),
+        )
+        if row is None:
+            return None
+        owner = row["user_id"] if hasattr(row, "keys") else row[0]
+        raw_status = row["status_json"] if hasattr(row, "keys") else row[1]
+        if (enforce and (user_id is None or owner != user_id)) or (user_id is not None and owner != user_id):
+            return None
+        status = VideoJobStatus.model_validate_json(raw_status)
+        if status.phase in {"queued", "analyzing", "planning", "generating", "downloading"}:
+            status.phase = "failed"
+            status.progress = 100
+            status.message = "Generation was interrupted by a server restart."
+            status.error = status.message
+        job = _Job(status=status, user_id=owner)
+        self._persist(job_id, job)
+        return job
+
+    def _persisted_user_ids(self, user_id: str) -> set[str]:
+        if self._db is None:
+            return set()
+        rows = self._db.fetchall("SELECT job_id FROM video_jobs WHERE user_id = ?", (user_id,))
+        return {str(row["job_id"] if hasattr(row, "keys") else row[0]) for row in rows}
 
     def _manifest_path(self, storage_dir: Path) -> Path:
         root = storage_dir.resolve()
@@ -142,7 +190,9 @@ class VideoJobStore:
 
     async def create(self, job_id: str, status: VideoJobStatus, *, user_id: str | None = None) -> VideoJobStatus:
         async with self._lock:
-            self._jobs[job_id] = _Job(status=status, user_id=user_id)
+            job = _Job(status=status, user_id=user_id)
+            self._jobs[job_id] = job
+            self._persist(job_id, job)
         return status
 
     async def update(self, job_id: str, **fields) -> VideoJobStatus:
@@ -151,13 +201,17 @@ class VideoJobStore:
             data = job.status.model_dump()
             data.update(fields)
             job.status = VideoJobStatus(**data)
+            self._persist(job_id, job)
             return job.status
 
     async def get(self, job_id: str, *, user_id: str | None = None, enforce: bool = False) -> VideoJobStatus | None:
         async with self._lock:
             job = self._jobs.get(job_id)
             if job is None:
-                return None
+                job = self._load_persisted(job_id, user_id, enforce)
+                if job is None:
+                    return None
+                self._jobs[job_id] = job
             if enforce and (user_id is None or job.user_id != user_id):
                 return None
             if user_id is not None and job.user_id != user_id:
@@ -205,6 +259,7 @@ class VideoJobStore:
             job_id for job_id, entry in manifest.items()
             if entry.get("user_id") == user_id
         }
+        persisted_ids.update(self._persisted_user_ids(user_id))
         for job_id in persisted_ids:
             entry = manifest.pop(job_id, {})
             candidate = self._safe_video_path(root, job_id, entry)
@@ -212,6 +267,8 @@ class VideoJobStore:
                 candidate.unlink(missing_ok=True)
         if persisted_ids:
             self._write_manifest(root, manifest)
+        if self._db is not None:
+            self._db.execute("DELETE FROM video_jobs WHERE user_id = ?", (user_id,))
 
         owned = [(job_id, job) for job_id, job in self._jobs.items() if job.user_id == user_id]
         for job_id, job in owned:
@@ -229,10 +286,13 @@ class VideoJobStore:
         return len(persisted_ids | {job_id for job_id, _ in owned})
 
 
-_STORE = VideoJobStore()
+_STORE: VideoJobStore | None = None
 
 
 def get_video_job_store() -> VideoJobStore:
+    global _STORE
+    if _STORE is None:
+        _STORE = VideoJobStore(get_database())
     return _STORE
 
 
