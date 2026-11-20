@@ -58,7 +58,7 @@ export function AppShell() {
       {!isPublicBeta && <PlanPromoDialog />}
       {!isPublicBeta && <ProjectPanel />}
       {!isPublicBeta && <GameCreatorPanel />}
-      {!isPublicBeta && <WorkflowPanel />
+      {!isPublicBeta && <WorkflowPanel />}
     </div>
   );
 }
