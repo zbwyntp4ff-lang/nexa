@@ -9,7 +9,7 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   BackendManager,
   probeBackend,
@@ -101,6 +101,30 @@ describe("BackendManager", () => {
     } finally {
       server.close();
     }
+  });
+
+  it("sends a termination signal only to the backend process it spawned", () => {
+    const manager = new BackendManager({ url: "http://127.0.0.1:8420", electronDir: __dirname });
+    const kill = vi.fn();
+    manager.process = { killed: false, kill };
+    manager.spawnedByUs = true;
+
+    manager.stop();
+
+    expect(kill).toHaveBeenCalledTimes(1);
+    expect(manager.process).toBeNull();
+  });
+  it("does not send duplicate termination signals after stop", () => {
+    const manager = new BackendManager({ url: "http://127.0.0.1:8420", electronDir: __dirname });
+    const kill = vi.fn();
+    manager.process = { killed: false, kill };
+    manager.spawnedByUs = true;
+
+    manager.stop();
+    manager.stop();
+
+    expect(kill).toHaveBeenCalledTimes(1);
+    expect(manager.process).toBeNull();
   });
   it("never kills a backend it did not spawn", () => {
     const manager = new BackendManager({ url: "http://127.0.0.1:1", electronDir: __dirname });
