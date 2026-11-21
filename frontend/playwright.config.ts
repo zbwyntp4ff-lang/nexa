@@ -21,7 +21,7 @@ export default defineConfig({
     },
     {
       name: "webkit-ipad",
-            testMatch: /ipad-safari\.spec\.ts/,
+      testMatch: /ipad-safari\.spec\.ts/,
       use: { ...devices["iPad (gen 7)"], viewport: { width: 1024, height: 1366 }, browserName: "webkit" },
     },
   ],
