@@ -49,6 +49,13 @@ describe("main process open-path handler", () => {
     expect(mainSource).toContain("shell.openPath");
   });
 });
+describe("main process lifecycle", () => {
+  it("stops the owned backend and closes the static server on before-quit", () => {
+    expect(mainSource).toContain('app.on("before-quit"');
+    expect(mainSource).toContain("backendManager.stop()");
+    expect(mainSource).toContain("staticServer.close()");
+  });
+});
 describe("main process security posture", () => {
   it("disables nodeIntegration and enables contextIsolation + sandbox", () => {
     expect(mainSource).toMatch(/nodeIntegration:\s*false/);
