@@ -25,6 +25,8 @@ PUBLIC_ORIGIN="https://ci-nexa.example"
 ENV_ARGS=(
   -e "PORT=${CONTAINER_PORT}"
   -e "NEXA_PUBLIC_BETA=true"
+  # Non-production CI fixture only; never use this value in deployed environments.
+  -e "GUEST_QUOTA_HASH_KEY=ci-only-not-a-production-secret-32chars-minimum"
   -e "ENVIRONMENT=production"
   -e "NEXA_STORAGE_MODE=persistent"
   -e "TOKENS_ENFORCE=true"
