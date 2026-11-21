@@ -138,6 +138,11 @@ def _public_cloud_problems(settings: Settings, *, label: str) -> list[str]:
 
     problems: list[str] = []
 
+    if bool(getattr(settings, "nexa_public_beta", False)):
+        quota_key = (getattr(settings, "guest_quota_hash_key", None) or "").strip()
+        if len(quota_key) < 32:
+            problems.append("GUEST_QUOTA_HASH_KEY must be set to at least 32 random characters for public beta")
+
     if not settings.trusted_edge_rate_limit_enabled:
         problems.append(
             "TRUSTED_EDGE_RATE_LIMIT_ENABLED must be true only after a trusted CDN/WAF "
