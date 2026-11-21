@@ -89,6 +89,13 @@
       {
         "from": "../requirements.txt",
         "to": "backend/requirements.txt"
+      },
+      {
+        "from": "../.venv",
+        "to": "backend/.venv",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "win": {
@@ -96,16 +103,7 @@
         "nsis",
         "portable"
       ],
-      "icon": "build/icon.ico",
-      "extraResources": [
-        {
-          "from": "../.venv",
-          "to": "backend/.venv",
-          "filter": [
-            "**/*"
-          ]
-        }
-      ]
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -118,16 +116,7 @@
         "AppImage"
       ],
       "icon": "build/icon.png",
-      "category": "Utility",
-      "extraResources": [
-        {
-          "from": "../.venv",
-          "to": "backend/.venv",
-          "filter": [
-            "**/*"
-          ]
-        }
-      ]
+      "category": "Utility"
     },
     "mac": {
       "target": [
