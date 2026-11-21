@@ -40,6 +40,7 @@ import { useUiStore } from "@/store/ui-store";
 import { useProfileStore } from "@/store/profile-store";
 export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const t = useT();
+  const isPublicBeta = process.env.NEXT_PUBLIC_NEXA_PUBLIC_BETA === "true";
   const conversations = useChatStore((s) => s.conversations);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
   const projects = useChatStore((s) => s.projects);
@@ -124,7 +125,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               onNavigate?.();
             }}
           />
-          <div className="mt-1.5 flex flex-col gap-0.5 rounded-lg bg-muted/40 p-1" role="group" aria-label={t("sidebar.views")}>
+          <div className={cn("mt-1.5 flex flex-col gap-0.5 rounded-lg bg-muted/40 p-1", isPublicBeta && "hidden")} role="group" aria-label={t("sidebar.views")}>
             <button
               type="button"
               aria-pressed={activeView === "omniverse"}
@@ -170,7 +171,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               className="pl-8"
             />
           </div>
-          <div className="mt-3 flex items-center justify-between px-1">
+          <div className={cn("mt-3 flex items-center justify-between px-1", isPublicBeta && "hidden")}>
             <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{t("sidebar.projects")}</span>
             <button
               type="button"
@@ -181,7 +182,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               <FolderKanban className="size-4" aria-hidden="true" />
             </button>
           </div>
-          <nav aria-label={t("sidebar.projects")} className="pt-1">
+          <nav aria-label={t("sidebar.projects")} className={cn("pt-1", isPublicBeta && "hidden")}>
             {projects.length === 0 ? (
               <p className="px-2 py-1.5 text-xs text-muted-foreground">{t("sidebar.noProjects")}</p>
             ) : (
@@ -276,7 +277,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         </div>
       </ScrollArea>
       {/* Fixed footer — never overlays chat list */}
-      <div className="z-10 shrink-0 space-y-1 border-t border-sidebar-border bg-sidebar p-2">
+      <div className={cn("z-10 shrink-0 space-y-1 border-t border-sidebar-border bg-sidebar p-2", isPublicBeta && "hidden")}>
         <button
           type="button"
           onClick={() => { openSettings(); onNavigate?.(); }}
