@@ -19,6 +19,11 @@ export default defineConfig({
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
     },
+    {
+      name: "webkit-ipad",
+      testMatch: /ipad-safari\.spec\.ts/,
+      use: { ...devices["iPad (gen 7)"], viewport: { width: 1024, height: 1366 }, browserName: "webkit" },
+    },
   ],
   webServer: {
     command: `npx next dev -p ${PORT}`,
