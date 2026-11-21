@@ -41,7 +41,10 @@ AUTH_PUBLIC_BASE_URL=https://YOUR_DOMAIN
 
 Use the remaining required production settings from
 `.env.production.example`, including a real provider API key, email delivery,
-and durable storage. Never put provider keys in a `NEXT_PUBLIC_*` variable.
+and durable storage. Set `TRUSTED_EDGE_RATE_LIMIT_ENABLED=true` only after a
+trusted CDN/WAF or reverse proxy has been independently configured and tested
+to enforce distributed limits. This flag is an operator attestation, not an
+automatic WAF detector. Never put provider keys in a `NEXT_PUBLIC_*` variable.
 
 Frontend build environment:
 
