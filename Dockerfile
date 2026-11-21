@@ -7,6 +7,8 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
 # Same-origin API (Caddy proxies /api and /health to uvicorn).
+ARG NEXT_PUBLIC_NEXA_PUBLIC_BETA=false
+ENV NEXT_PUBLIC_NEXA_PUBLIC_BETA=${NEXT_PUBLIC_NEXA_PUBLIC_BETA}
 ENV NEXT_PUBLIC_API_BASE_URL=
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
