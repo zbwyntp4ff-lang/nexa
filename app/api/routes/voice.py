@@ -10,6 +10,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, UploadFile
 from pydantic import BaseModel, Field
 from app.config.settings import Settings, get_settings
+from app.api.security_deps import require_user_when_enforced
+from app.auth.models import UserRecord
+from typing import Annotated
 from app.voice.factory import SpeechToTextProviderFactory, TextToSpeechProviderFactory
 router = APIRouter(prefix="/api/v1/voice", tags=["voice"])
 class SynthesizeRequest(BaseModel):
@@ -25,7 +28,9 @@ async def voice_status(settings: Settings = Depends(get_settings)) -> dict:
     }
 @router.post("/transcribe")
 async def transcribe(
-    file: UploadFile, settings: Settings = Depends(get_settings)
+    file: UploadFile,
+    settings: Settings = Depends(get_settings),
+    user: Annotated[UserRecord | None, Depends(require_user_when_enforced)] = None,
 ) -> dict:
     provider = SpeechToTextProviderFactory.create(settings)
     raw = await file.read()
@@ -33,7 +38,9 @@ async def transcribe(
     return result.model_dump()
 @router.post("/synthesize")
 async def synthesize(
-    request: SynthesizeRequest, settings: Settings = Depends(get_settings)
+    request: SynthesizeRequest,
+    settings: Settings = Depends(get_settings),
+    user: Annotated[UserRecord | None, Depends(require_user_when_enforced)] = None,
 ) -> dict:
     provider = TextToSpeechProviderFactory.create(settings)
     result = await provider.synthesize(request.text, voice=request.voice)
