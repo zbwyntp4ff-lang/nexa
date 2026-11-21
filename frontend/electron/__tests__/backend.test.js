@@ -114,6 +114,18 @@ describe("BackendManager", () => {
     expect(kill).toHaveBeenCalledTimes(1);
     expect(manager.process).toBeNull();
   });
+  it("does not send duplicate termination signals after stop", () => {
+    const manager = new BackendManager({ url: "http://127.0.0.1:8420", electronDir: __dirname });
+    const kill = vi.fn();
+    manager.process = { killed: false, kill };
+    manager.spawnedByUs = true;
+
+    manager.stop();
+    manager.stop();
+
+    expect(kill).toHaveBeenCalledTimes(1);
+    expect(manager.process).toBeNull();
+  });
   it("never kills a backend it did not spawn", () => {
     const manager = new BackendManager({ url: "http://127.0.0.1:1", electronDir: __dirname });
     manager.process = { killed: false, kill: () => { throw new Error("must not be called"); } };
