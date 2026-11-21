@@ -22,6 +22,7 @@ from app.config.settings import Settings, get_settings
 from app.gateway.errors import GatewayError, MODEL_UNAVAILABLE
 def _public_beta_env(monkeypatch, **extra: str) -> Settings:
     monkeypatch.setenv("NEXA_PUBLIC_BETA", "true")
+    monkeypatch.setenv("GUEST_QUOTA_HASH_KEY", "test-only-secret-key-that-is-at-least-32-characters")
     monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.setenv("NEXA_STORAGE_MODE", "persistent")
     monkeypatch.setenv("TOKENS_ENFORCE", "true")
