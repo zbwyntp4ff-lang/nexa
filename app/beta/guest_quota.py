@@ -7,11 +7,13 @@ not reset usage. IP addresses are SHA-256 hashed before storage.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import time
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, Request
 
+from app.config.settings import get_settings
 from app.db.engine import get_database
 
 DAILY_LIMIT = 15
@@ -22,7 +24,8 @@ def _client_key(request: Request) -> str:
     # Use the transport peer, not user-supplied X-Forwarded-For. Configure
     # trusted proxy handling at the ASGI server if deployed behind a proxy.
     host = request.client.host if request.client else "unknown"
-    return hashlib.sha256(host.encode("utf-8")).hexdigest()
+    secret = get_settings().guest_quota_hash_key or "nexa-local-development-only-key"
+    return hmac.new(secret.encode("utf-8"), host.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def consume_guest_request(request: Request) -> dict[str, int | str]:
