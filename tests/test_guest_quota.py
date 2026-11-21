@@ -137,3 +137,16 @@ def test_public_beta_rejects_oversized_message(monkeypatch):
         _apply_public_beta_restrictions(request, None, settings)
     assert exc.value.status_code == 413
     assert exc.value.detail["error"] == "beta_message_too_long"
+
+
+def test_guest_quota_identifier_uses_secret_hmac_key(monkeypatch):
+    from app.beta import guest_quota
+
+    request = _Request()
+    monkeypatch.setattr(guest_quota, "get_settings", lambda: SimpleNamespace(guest_quota_hash_key="first-secret-key-which-is-long-enough-123"))
+    first = guest_quota._client_key(request)
+    monkeypatch.setattr(guest_quota, "get_settings", lambda: SimpleNamespace(guest_quota_hash_key="second-secret-key-which-is-long-enough-456"))
+    second = guest_quota._client_key(request)
+    assert first != second
+    assert len(first) == 64
+    assert len(second) == 64
