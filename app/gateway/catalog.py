@@ -13,6 +13,18 @@ _OPENROUTER_CONTEXT = 128_000
 def static_catalog() -> list[ModelCard]:
     return [
         ModelCard(
+            provider="hexa",
+            model_id="hexa-4.5",
+            display_name="HEXA 4.5",
+            capabilities=["chat", "simple", "reasoning", "coding", "local"],
+            context_window=8_192,
+            supports_vision=False,
+            supports_tools=False,
+            supports_streaming=True,
+            availability="unavailable",
+            availability_reason="provider_unavailable",
+        ),
+        ModelCard(
             provider="openai",
             model_id="gpt-4o",
             display_name="GPT-4o",

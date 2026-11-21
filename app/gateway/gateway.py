@@ -123,6 +123,14 @@ def build_provider_registry(settings: Settings) -> ProviderRegistry:
     registry.register("gemini", gemini_factory)
     registry.register("openrouter", openrouter_factory)
     registry.register("ollama", ollama_factory)
+    def hexa_factory(model_id: str) -> AIProvider:
+        from app.providers.hexa_provider import Hexa45Provider
+        return Hexa45Provider(
+            base_url=settings.hexa_model_url,
+            model=model_id or settings.hexa_model_name,
+            timeout_seconds=timeout,
+        )
+    registry.register("hexa", hexa_factory)
     registry.register("local", local_factory)
     registry.register("mock", mock_factory)
     return registry
@@ -139,6 +147,7 @@ def initial_selection(settings: Settings) -> Selection:
         "gemini": settings.gemini_model,
         "openrouter": settings.openrouter_model,
         "ollama": settings.local_model_name,
+        "hexa": settings.hexa_model_name,
         "mock": "nexa-mock-1",
     }.get(provider, settings.local_model_name)
     return Selection(
@@ -229,13 +238,20 @@ class ModelGateway:
     def _cards(self, *, include_mock: bool | None = None) -> list[ModelCard]:
         if include_mock is None:
             include_mock = self._allow_mock_cards()
-        return self._models.cards(
+        cards = self._models.cards(
             openai_configured=bool(self._settings.openai_api_key),
             anthropic_configured=bool(self._settings.anthropic_api_key),
             gemini_configured=bool(self._settings.resolved_gemini_api_key),
             openrouter_configured=bool(self._settings.openrouter_api_key),
             include_mock=include_mock,
         )
+        # Advertise HEXA only when its dedicated inference endpoint is configured.
+        for card in cards:
+            if card.provider == "hexa":
+                configured = bool(self._settings.hexa_model_url)
+                card.availability = "available" if configured else "unavailable"
+                card.availability_reason = None if configured else "provider_unavailable"
+        return cards
     async def list_models(self, *, include_mock: bool = False) -> list[ModelCard]:
         await self.refresh_ollama()
         return self._cards(include_mock=include_mock)
@@ -248,6 +264,7 @@ class ModelGateway:
             "ollama": self._models._ollama_reachable is not False,
             "local": self._models._ollama_reachable is not False,
             "mock": self._allow_mock_cards(),
+            "hexa": bool(self._settings.hexa_model_url),
         }.get(provider, False)
         reason = None
         availability = "available" if configured else "unavailable"

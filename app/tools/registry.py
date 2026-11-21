@@ -11,6 +11,7 @@ from app.tools.current_time import CurrentTimeTool
 from app.tools.directory_list import DirectoryListTool
 from app.tools.file_read import FileReadTool
 from app.tools.file_write import FileWriteTool
+from app.tools.math_solver import MathSolverTool
 from app.web.page_fetcher import PageFetcher
 from app.web.search_provider import SearchProviderFactory
 logger = get_logger("nexa.tools")
@@ -73,6 +74,7 @@ def build_default_registry() -> ToolRegistry:
     sandbox_root.mkdir(parents=True, exist_ok=True)
     registry = ToolRegistry()
     registry.register(CalculatorTool())
+    registry.register(MathSolverTool())
     registry.register(CurrentTimeTool())
     registry.register(FileReadTool(sandbox_root, max_bytes=settings.max_file_read_bytes))
     registry.register(FileWriteTool(sandbox_root))

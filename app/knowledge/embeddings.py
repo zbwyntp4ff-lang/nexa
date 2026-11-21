@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import math
 import re
+import httpx
 from abc import ABC, abstractmethod
 _WORD_PATTERN = re.compile(r"[\w]+", re.UNICODE)
 DEFAULT_DIMENSIONS = 256
@@ -58,15 +59,82 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
     if norm_a == 0 or norm_b == 0:
         return 0.0
     return dot / (norm_a * norm_b)
+class OllamaEmbeddingProvider(EmbeddingProvider):
+    """Semantic embeddings from a private Ollama-compatible inference server."""
+
+    name = "ollama"
+
+    def __init__(self, base_url: str, model: str, timeout_seconds: float = 20.0) -> None:
+        if not base_url.strip() or not model.strip():
+            raise ValueError("Embedding base URL and model are required.")
+        self.base_url = base_url.strip().rstrip("/")
+        self.model = model.strip()
+        if timeout_seconds <= 0:
+            raise ValueError("Embedding timeout must be greater than zero.")
+        self.timeout_seconds = timeout_seconds
+        self.dimensions = 0  # discovered from the first valid response
+
+    def embed(self, text: str) -> list[float]:
+        return self.embed_batch([text])[0]
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        if any(not isinstance(item, str) or not item.strip() for item in texts):
+            raise ValueError("Embedding input must contain non-empty text strings.")
+        try:
+            response = httpx.post(
+                f"{self.base_url}/api/embed",
+                json={"model": self.model, "input": texts},
+                timeout=self.timeout_seconds,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise RuntimeError(f"Ollama embedding request failed ({exc.__class__.__name__}).") from exc
+        vectors = payload.get("embeddings") if isinstance(payload, dict) else None
+        if not isinstance(vectors, list) or len(vectors) != len(texts):
+            raise RuntimeError("Ollama embedding response has an invalid embeddings array.")
+        normalized: list[list[float]] = []
+        dimensions: int | None = None
+        for vector in vectors:
+            if not isinstance(vector, list) or not vector:
+                raise RuntimeError("Ollama returned an empty or invalid embedding vector.")
+            try:
+                values = [float(value) for value in vector]
+            except (TypeError, ValueError) as exc:
+                raise RuntimeError("Ollama returned non-numeric embedding values.") from exc
+            if any(not math.isfinite(value) for value in values):
+                raise RuntimeError("Ollama returned non-finite embedding values.")
+            if dimensions is None:
+                dimensions = len(values)
+            elif len(values) != dimensions:
+                raise RuntimeError("Ollama returned inconsistent embedding dimensions.")
+            norm = math.sqrt(sum(value * value for value in values))
+            if norm == 0:
+                raise RuntimeError("Ollama returned a zero-length embedding vector.")
+            normalized.append([value / norm for value in values])
+        self.dimensions = dimensions or 0
+        return normalized
+
+
 class EmbeddingProviderFactory:
-    """Selects an :class:`EmbeddingProvider`. Only ``local`` is implemented today.
-    A future remote provider (e.g. an API-based embedding model) would be
-    added here the same way :class:`app.providers.factory.ProviderFactory`
-    adds AI providers - never called unless explicitly configured, and never
+    """Select an embedding backend; local remains the offline default.
+
+    Remote providers are only called when explicitly configured and are never
     required for the Knowledge Base to work locally.
     """
     @staticmethod
-    def create(name: str = "local", dimensions: int = DEFAULT_DIMENSIONS) -> EmbeddingProvider:
+    def create(
+        name: str = "local",
+        dimensions: int = DEFAULT_DIMENSIONS,
+        *,
+        base_url: str = "http://127.0.0.1:11434",
+        model: str = "nomic-embed-text",
+        timeout_seconds: float = 20.0,
+    ) -> EmbeddingProvider:
         if name == "local":
             return LocalEmbeddingProvider(dimensions=dimensions)
-        raise ValueError(f"Unknown embedding provider '{name}'. Available: local.")
+        if name == "ollama":
+            return OllamaEmbeddingProvider(base_url, model, timeout_seconds)
+        raise ValueError(f"Unknown embedding provider '{name}'. Available: local, ollama.")

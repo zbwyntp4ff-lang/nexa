@@ -9,7 +9,7 @@ from typing import Literal
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 ProviderName = Literal[
-    "mock", "openai", "anthropic", "gemini", "openrouter", "local", "ollama", "nexa"
+    "mock", "openai", "anthropic", "gemini", "openrouter", "local", "ollama", "hexa", "nexa"
 ]
 # Providers that are already implemented. ``ollama`` is the local server
 # under its product name; ``local`` remains as the original alias.
@@ -21,6 +21,7 @@ SUPPORTED_PROVIDERS: tuple[str, ...] = (
     "openrouter",
     "local",
     "ollama",
+    "hexa",
 )
 class Settings(BaseSettings):
     """Central application settings, populated from the environment."""
@@ -92,6 +93,9 @@ class Settings(BaseSettings):
         default="http://localhost:11434", alias="LOCAL_MODEL_URL"
     )
     local_model_name: str = Field(default="llama3.2:3b", alias="LOCAL_MODEL_NAME")
+    # HEXA 4.5 inference server (Ollama-compatible HTTP API).
+    hexa_model_url: str = Field(default="", alias="HEXA_MODEL_URL")
+    hexa_model_name: str = Field(default="hexa-4.5", alias="HEXA_MODEL_NAME")
     # --- Model gateway (Part 7A) ------------------------------------------
     # Empty = pin the provider/model selected by AI_PROVIDER. "auto" lets
     # the selection policy choose an available model for the task.
@@ -202,6 +206,10 @@ class Settings(BaseSettings):
     knowledge_indexing_timeout_seconds: float = Field(
         default=20.0, alias="KNOWLEDGE_INDEXING_TIMEOUT_SECONDS"
     )
+    knowledge_embedding_provider: str = Field(default="local", alias="KNOWLEDGE_EMBEDDING_PROVIDER")
+    knowledge_embedding_model: str = Field(default="nomic-embed-text", alias="KNOWLEDGE_EMBEDDING_MODEL")
+    knowledge_embedding_base_url: str = Field(default="http://127.0.0.1:11434", alias="KNOWLEDGE_EMBEDDING_BASE_URL")
+    knowledge_embedding_timeout_seconds: float = Field(default=20.0, alias="KNOWLEDGE_EMBEDDING_TIMEOUT_SECONDS")
     knowledge_embedding_dimensions: int = Field(
         default=256, alias="KNOWLEDGE_EMBEDDING_DIMENSIONS"
     )
