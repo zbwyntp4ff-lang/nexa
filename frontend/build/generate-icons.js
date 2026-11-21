@@ -11,7 +11,6 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
-const pngToIco = require("png-to-ico");
 const sharp = require("sharp");
 const SOURCE_LOGO = path.join(__dirname, "..", "public", "nexa-logo.png");
 const OUT_DIR = __dirname;
@@ -20,6 +19,8 @@ const OUT_DIR = __dirname;
 // each frame must be a normal icon resolution.
 const ICO_SIZES = [16, 24, 32, 48, 64, 128, 256];
 async function main() {
+  // png-to-ico v3 is ESM-only; load its default export from this CommonJS script.
+  const { default: pngToIco } = await import("png-to-ico");
   if (!fs.existsSync(SOURCE_LOGO)) {
     throw new Error(`NEXA logo not found at ${SOURCE_LOGO}`);
   }
