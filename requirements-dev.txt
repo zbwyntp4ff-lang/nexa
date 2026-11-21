@@ -1,4 +1,4 @@
 -r requirements.txt
 pytest==9.2.0
-pytest-asyncio==0.25.2
+pytest-asyncio==1.5.0
 # After pip install: python -m playwright install chromium
