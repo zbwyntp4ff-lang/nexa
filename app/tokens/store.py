@@ -93,8 +93,12 @@ class TokenStore:
             return
         try:
             raw = json.loads(self._path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return
+        except (json.JSONDecodeError, OSError) as exc:
+            # Never turn an unreadable token ledger into an empty account store:
+            # the next write could permanently erase balances and charge history.
+            raise RuntimeError(
+                f"Cannot load NEXA token store at {self._path}: {exc}"
+            ) from exc
         for entry in raw.get("accounts", []):
             item = TokenAccount.model_validate(entry)
             self._accounts[item.user_id] = item
