@@ -29,7 +29,7 @@ def test_stripe_adapter_checkout_portal_subscription_and_webhook(monkeypatch):
             retrieve=record("subscription.retrieve"),
         ),
         PaymentMethod=SimpleNamespace(
-            list=record("payment_method.list"),
+            list=lambda **kwargs: (calls.append(("payment_method.list", (), kwargs)) or SimpleNamespace(data=[])),
             detach=record("payment_method.detach"),
         ),
         Webhook=SimpleNamespace(construct_event=record("webhook.construct_event")),
