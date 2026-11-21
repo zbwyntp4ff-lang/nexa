@@ -26,6 +26,13 @@ services:
     envVars:
       - key: NEXA_PUBLIC_BETA
         value: "true"
+      # Required HMAC key for anonymous quota pseudonyms; set a strong secret in Render Dashboard.
+      - key: GUEST_QUOTA_HASH_KEY
+        sync: false
+      # Keep false until a real external CDN/WAF or Nginx edge has been deployed and tested.
+      # Public-beta startup intentionally fails until the operator changes this to true.
+      - key: TRUSTED_EDGE_RATE_LIMIT_ENABLED
+        value: "false"
       - key: ENVIRONMENT
         value: production
       - key: NEXA_STORAGE_MODE
