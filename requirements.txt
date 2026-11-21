@@ -4,7 +4,7 @@ uvicorn[standard]==0.34.0
 pydantic==2.14.3
 pydantic-settings==2.7.1
 httpx==0.28.1
-openai==3.55.0
+openai==3.55.1
 anthropic==0.42.0
 python-dotenv==1.2.4
 pypdf==6.21.4
