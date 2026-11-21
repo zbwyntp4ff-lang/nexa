@@ -232,7 +232,7 @@ export function Composer({ mode = "chat", onSend, onStop, isSending, disabled, p
             </Tooltip>
           </div>
           <div className="flex items-center gap-1">
-            {!isPublicBeta && <ModelQuickSwitch />
+            {!isPublicBeta && <ModelQuickSwitch />}
             {isSending ? (
               <Button type="button" size="icon" variant="secondary" aria-label={t("chat.stopGenerating")} onClick={onStop}>
                 <Square className="size-4" aria-hidden="true" />
