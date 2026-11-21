@@ -22,7 +22,7 @@ export default defineConfig({
     {
       name: "webkit-ipad",
             testMatch: /chat-flow\.spec\.ts/,
-      use: { ...devices["iPad (gen 7)"], browserName: "webkit" },
+      use: { ...devices["iPad (gen 7)"], viewport: { width: 1024, height: 1366 }, browserName: "webkit" },
     },
   ],
   webServer: {
