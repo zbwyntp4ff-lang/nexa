@@ -19,6 +19,11 @@ export default defineConfig({
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
     },
+    {
+      name: "webkit-ipad",
+      testMatch: /chat-flow\\.spec\\.ts/,
+      use: { ...devices["iPad (gen 7)"], browserName: "webkit" },
+    },
   ],
   webServer: {
     command: `npx next dev -p ${PORT}`,
