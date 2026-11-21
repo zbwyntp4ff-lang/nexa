@@ -13,6 +13,9 @@ the browser.
 - Anonymous requests are charged against a persistent IP-based allowance:
   **5 requests per one-hour window and 15 requests per UTC day**.
 - Quota counters are stored in the shared SQL database in `guest_usage`.
+  Client IPs are HMAC-SHA256 pseudonymized with `GUEST_QUOTA_HASH_KEY`; keep
+  that key stable across instances and deployments. Rotating it resets existing
+  guest quota buckets. The key is server-only and must never use a `NEXT_PUBLIC_` prefix.
   Clearing browser storage does not reset the counter.
 - Messages are limited to 3,000 characters and the server uses at most the
   last 10 text-only history messages for guest requests.
@@ -28,6 +31,7 @@ Backend environment (server-side only):
 
 ```dotenv
 NEXA_PUBLIC_BETA=true
+GUEST_QUOTA_HASH_KEY=GENERATE_A_RANDOM_SECRET_AT_LEAST_32_CHARACTERS
 ENVIRONMENT=production
 NEXA_STORAGE_MODE=persistent
 TOKENS_ENFORCE=true
