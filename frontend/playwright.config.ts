@@ -21,7 +21,7 @@ export default defineConfig({
     },
     {
       name: "webkit-ipad",
-      testMatch: /chat-flow\\.spec\\.ts/,
+            testMatch: /chat-flow\.spec\.ts/,
       use: { ...devices["iPad (gen 7)"], browserName: "webkit" },
     },
   ],
