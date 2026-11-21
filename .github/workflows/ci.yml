@@ -26,7 +26,7 @@ jobs:
           pip install pytest pytest-asyncio pip-audit
       - name: Report Python dependency advisories
         run: |
-          pip-audit -r requirements.txt --format=json > pip-audit.json || true
+          pip-audit -r requirements.txt --format=json > pip-audit.json
           python -c "import json; d=json.load(open('pip-audit.json')); rows=[(p['name'],p['version'],v['id'],','.join(v.get('fix_versions',[]))) for p in d.get('dependencies',[]) for v in p.get('vulns',[])]; print('Python advisories:', len(rows)); [print(*row, sep=' | ') for row in rows]"
       - name: Upload Python audit report
         if: always()
@@ -36,41 +36,12 @@ jobs:
           path: pip-audit.json
           if-no-files-found: ignore
           retention-days: 7
-      - name: Unit / security / planner / office / compound / phase5
+      - name: Full backend regression suite
         env:
           AI_PROVIDER: mock
           TOKENS_ENFORCE: "false"
           NEXA_LOCAL_DESKTOP: "1"
-        run: |
-          python -m pytest \
-            tests/test_phase5_reliability.py \
-            tests/test_phase6_beta.py \
-            tests/test_security_phase6_final.py \
-            tests/test_beta_release_gate.py \
-            tests/test_open_beta_readiness.py \
-            tests/test_desktop_phase4.py \
-            tests/test_compound_projects.py \
-            tests/test_office_tools.py \
-            tests/test_agent_planner.py \
-            tests/test_agent.py \
-            tests/test_knowledge_quality.py \
-            tests/test_knowledge_rag.py \
-            tests/test_security_part15.py \
-            tests/test_cloud_isolation.py \
-            tests/test_attachments.py \
-            tests/test_auth.py \
-            tests/test_model_router.py \
-            tests/test_learning_memory.py \
-            tests/test_memory_store.py \
-            tests/test_nexa_core_prompt.py \
-            tests/test_video_intent.py \
-            tests/test_video_storage.py \
-            tests/test_plugins.py \
-            tests/test_security_audit_regressions.py \
-            tests/test_page_fetcher_pinning.py \
-            tests/test_api.py \
-            tests/test_browser_verify.py \
-            -q --tb=short -m "not network"
+        run: python -m pytest tests -q --tb=short -m "not network"
       - name: Write offline eval reports
         env:
           AI_PROVIDER: mock
@@ -108,7 +79,7 @@ jobs:
           retention-days: 7
       - name: Enforce full npm dependency audit
         run: npm audit
-      - run: npx vitest run electron/__tests__/packaging.test.js
+      - run: npx vitest run electron/__tests__
 
   frontend-validation:
     runs-on: ubuntu-latest
@@ -130,3 +101,23 @@ jobs:
         run: npm run build
       - name: Audit production dependencies
         run: npm audit --omit=dev
+  frontend-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run browser end-to-end tests
+        env:
+          CI: "true"
+        run: npm run e2e
