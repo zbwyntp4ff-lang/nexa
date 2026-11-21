@@ -165,3 +165,13 @@ test("mobile viewport shows a hamburger menu that opens the sidebar as a drawer"
   await page.getByRole("button", { name: "Open sidebar" }).click();
   await expect(page.getByRole("button", { name: "New chat" })).toBeVisible();
 });
+
+test("iPad-sized viewport keeps the chat composer and navigation usable", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 1366 });
+  await page.goto("/");
+  await expect(page.getByText("NEXA AI")).toBeVisible();
+  await expect(page.getByLabel("Message NEXA")).toBeVisible();
+  await expect(page.getByRole("button", { name: "New chat" })).toBeVisible();
+  await page.getByLabel("Message NEXA").fill("iPad layout check");
+  await expect(page.getByLabel("Message NEXA")).toHaveValue("iPad layout check");
+});
