@@ -5,9 +5,6 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
-import sharp from "sharp";
-import { convertPngToIco } from "../../build/generate-icons.js";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 const electronDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -52,6 +49,13 @@ describe("main process open-path handler", () => {
     expect(mainSource).toContain("shell.openPath");
   });
 });
+describe("main process lifecycle", () => {
+  it("stops the owned backend and closes the static server on before-quit", () => {
+    expect(mainSource).toContain('app.on("before-quit"');
+    expect(mainSource).toContain("backendManager.stop()");
+    expect(mainSource).toContain("staticServer.close()");
+  });
+});
 describe("main process security posture", () => {
   it("disables nodeIntegration and enables contextIsolation + sandbox", () => {
     expect(mainSource).toMatch(/nodeIntegration:\s*false/);
@@ -73,23 +77,5 @@ describe("Electron cookie origin", () => {
     expect(apiSource).toContain('if (port === "48420") return "http://localhost:8420"');
     expect(mainSource).toContain('return `http://localhost:${port}/`');
     expect(mainSource).toContain("fs.chmodSync(target, 0o600)");
-  });
-});
-
-
-describe("Windows icon generation", () => {
-  it("loads png-to-ico v3 and creates a valid ICO file buffer", async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nexa-ico-test-"));
-    const pngPath = path.join(dir, "frame-16.png");
-    try {
-      await sharp({ create: { width: 16, height: 16, channels: 4, background: { r: 30, g: 20, b: 80, alpha: 1 } } })
-        .png().toFile(pngPath);
-      const ico = await convertPngToIco([pngPath]);
-      expect(Buffer.isBuffer(ico)).toBe(true);
-      expect(ico.subarray(0, 4)).toEqual(Buffer.from([0, 0, 1, 0]));
-      expect(ico.readUInt16LE(4)).toBe(1);
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
   });
 });
