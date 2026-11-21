@@ -44,8 +44,8 @@ def test_stripe_sdk_exposes_all_methods_used_by_nexa() -> None:
     provider = StripeBillingProvider(
         Settings(
             _env_file=None,
-            stripe_secret_key="sk_test_not_a_real_key",
-            stripe_webhook_secret="whsec_test_not_a_real_secret",
+            STRIPE_SECRET_KEY="sk_test_not_a_real_key",
+            STRIPE_WEBHOOK_SECRET="whsec_test_not_a_real_secret",
         )
     )
     sdk = provider._client()
