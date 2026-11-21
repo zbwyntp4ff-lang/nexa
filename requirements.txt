@@ -16,5 +16,5 @@ python-multipart==0.0.34
 PyJWT[crypto]==2.15.1
 cryptography==50.0.2
 stripe==11.4.1
-playwright==1.49.1
+playwright==1.65.2
 qrcode==8.2
