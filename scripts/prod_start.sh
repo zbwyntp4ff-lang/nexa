@@ -63,7 +63,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "[nexa] starting API on :${API_PORT}"
-run_app python -m uvicorn app.main:app --host 127.0.0.1 --port "${API_PORT}" --proxy-headers --forwarded-allow-ips='*' &
+run_app python -m uvicorn app.main:app --host 127.0.0.1 --port "${API_PORT}" --proxy-headers --forwarded-allow-ips='127.0.0.1' &
 API_PID=$!
 
 echo "[nexa] starting Next.js on :${WEB_PORT}"
