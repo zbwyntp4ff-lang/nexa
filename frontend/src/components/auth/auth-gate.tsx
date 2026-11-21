@@ -8,6 +8,7 @@ import { VerifyEmailForm } from "@/components/auth/verify-email-form";
 import { setSessionToken } from "@/lib/session-token";
 import { useAuthStore } from "@/store/auth-store";
 import { useProfileStore } from "@/store/profile-store";
+import { useChatStore } from "@/store/chat-store";
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const status = useAuthStore((s) => s.status);
@@ -17,8 +18,18 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const profile = useProfileStore((s) => s.profile);
   const loadProfile = useProfileStore((s) => s.load);
   const [onboardingDismissed, setOnboardingDismissed] = React.useState(false);
+  const [betaReady, setBetaReady] = React.useState(false);
+  const bindChatUser = useChatStore((s) => s.bindUser);
+
+  const isPublicBeta = process.env.NEXT_PUBLIC_NEXA_PUBLIC_BETA === "true";
 
   React.useEffect(() => {
+    if (isPublicBeta) {
+      // Never show a previously signed-in account's cached conversations in guest mode.
+      bindChatUser(null);
+      setBetaReady(true);
+      return;
+    }
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       // Legacy: older OAuth callbacks put session_token in the URL. Prefer cookie.
@@ -36,11 +47,20 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       }
     }
     void bootstrap();
-  }, [bootstrap]);
+  }, [bootstrap, bindChatUser, isPublicBeta]);
 
   React.useEffect(() => {
     if (status === "authenticated") void loadProfile();
   }, [status, loadProfile]);
+
+  if (isPublicBeta && !betaReady) {
+    return (
+      <div className="flex h-dvh w-full items-center justify-center bg-background text-sm text-muted-foreground">
+        HEXA BETA
+      </div>
+    );
+  }
+  if (isPublicBeta) return <>{children}</>;
 
   if (status === "loading") {
     return (
