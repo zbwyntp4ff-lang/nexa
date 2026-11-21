@@ -139,3 +139,16 @@ def test_workflows_disabled_returns_503(tmp_path, monkeypatch: pytest.MonkeyPatc
         body.get("message") or body.get("detail") or ""
     ).lower()
     get_settings.cache_clear()
+
+
+def test_public_beta_requires_strong_guest_quota_hmac_key():
+    s = _settings(
+        environment="production",
+        NEXA_PUBLIC_BETA=True,
+        NEXA_STORAGE_MODE="persistent",
+        TRUSTED_EDGE_RATE_LIMIT_ENABLED=True,
+        API_RATE_LIMIT_PER_MINUTE=120,
+        TOKENS_ENFORCE=True,
+    )
+    problems = validate_production_settings(s)
+    assert any("GUEST_QUOTA_HASH_KEY" in problem for problem in problems)
