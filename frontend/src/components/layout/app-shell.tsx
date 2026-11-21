@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { ChatPanel } from "@/components/chat/chat-panel";
+import { BetaUsage } from "@/components/beta/beta-usage";
 import { HexaVoicePanel } from "@/components/hexa/hexa-voice-panel";
 import { Header } from "@/components/layout/header";
 import { PlanPromoDialog } from "@/components/layout/plan-promo-dialog";
@@ -21,9 +22,10 @@ export function AppShell() {
   useBackendHealth();
   const activeView = useUiStore((s) => s.activeView);
   const openSettings = useUiStore((s) => s.openSettings);
-  const isOmni = activeView === "omniverse";
-  const isHexa = activeView === "hexa";
-  const isChat = activeView === "chat";
+  const isPublicBeta = process.env.NEXT_PUBLIC_NEXA_PUBLIC_BETA === "true";
+  const isOmni = !isPublicBeta && activeView === "omniverse";
+  const isHexa = !isPublicBeta && activeView === "hexa";
+  const isChat = isPublicBeta || activeView === "chat";
 
   React.useEffect(() => {
     if (typeof window === "undefined") return;
@@ -39,6 +41,7 @@ export function AppShell() {
       <MobileSidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <StorageModeBanner />
+        {isPublicBeta && <BetaUsage />}
         {!isHexa && <Header />}
         <main className="min-h-0 flex-1">
           {isHexa ? (
@@ -50,12 +53,12 @@ export function AppShell() {
           )}
         </main>
       </div>
-      {isChat && <RightDock />}
-      <SettingsDialog />
-      <PlanPromoDialog />
-      <ProjectPanel />
-      <GameCreatorPanel />
-      <WorkflowPanel />
+      {isChat && !isPublicBeta && <RightDock />}
+      {!isPublicBeta && <SettingsDialog />}
+      {!isPublicBeta && <PlanPromoDialog />}
+      {!isPublicBeta && <ProjectPanel />}
+      {!isPublicBeta && <GameCreatorPanel />}
+      {!isPublicBeta && <WorkflowPanel />}
     </div>
   );
 }
