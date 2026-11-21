@@ -27,3 +27,20 @@ def test_corrupt_store_fails_closed_and_preserves_original_file(
         store_type(path)
 
     assert path.read_bytes() == corrupt
+
+
+def test_token_store_does_not_mutate_when_file_lock_fails(tmp_path, monkeypatch):
+    path = tmp_path / "tokens.json"
+    store = TokenStore(path)
+
+    def fail_lock(_lock_file):
+        raise OSError("simulated lock failure")
+
+    monkeypatch.setattr(TokenStore, "_acquire_file_lock", staticmethod(fail_lock))
+    with pytest.raises(RuntimeError, match="Cannot acquire NEXA token-store lock"):
+        store.run_atomic(lambda current: current.account_set(
+            __import__("app.tokens.models", fromlist=["TokenAccount"]).TokenAccount(
+                user_id="u1", balance=100
+            )
+        ))
+    assert not path.exists()
