@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     # Open public beta host: applies the same hard startup guards as durable
     # production (TOKENS_ENFORCE, no desktop tools, no mock, email verify, …).
     nexa_public_beta: bool = Field(default=False, alias="NEXA_PUBLIC_BETA")
+    # HMAC key for pseudonymizing client IPs in anonymous beta quota records.
+    guest_quota_hash_key: str | None = Field(default=None, alias="GUEST_QUOTA_HASH_KEY")
     # Emergency stop for all model calls (ops kill switch).
     ai_kill_switch: bool = Field(default=False, alias="NEXA_AI_KILL_SWITCH")
     # Max concurrent /agent runs per authenticated user (0 = unlimited).
@@ -402,6 +404,7 @@ class Settings(BaseSettings):
         data = self.model_dump()
         for secret_key in (
             "openai_api_key",
+            "guest_quota_hash_key",
             "anthropic_api_key",
             "gemini_api_key",
             "google_api_key",
