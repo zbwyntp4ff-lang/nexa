@@ -90,6 +90,7 @@ def test_durable_production_ok_when_hardened(monkeypatch):
         SMTP_HOST="smtp.example.com",
         EMAIL_FROM="noreply@example.com",
         TRUSTED_EDGE_RATE_LIMIT_ENABLED=True,
+        API_RATE_LIMIT_PER_MINUTE=120,
     )
     assert is_durable_production(s) is True
     assert validate_production_settings(s) == []
