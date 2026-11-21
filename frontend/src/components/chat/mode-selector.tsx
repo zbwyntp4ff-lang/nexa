@@ -112,7 +112,7 @@ export function ModeSelector({
           }}
         />
       )}
-      {MODES.map((mode) => {
+      {MODES.filter((mode) => AVAILABLE_MODES.has(mode.id)).map((mode) => {
         const Icon = ICONS[mode.id];
         const isActive = currentMode === mode.id;
         const gatingPlugin = pluginGatingMode(mode.id);
