@@ -39,8 +39,12 @@ class BillingStore:
             return
         try:
             raw = json.loads(self._path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return
+        except (json.JSONDecodeError, OSError) as exc:
+            # Do not silently discard subscriptions, invoices or webhook
+            # idempotency records when the durable billing file is damaged.
+            raise RuntimeError(
+                f"Cannot load NEXA billing store at {self._path}: {exc}"
+            ) from exc
         for entry in raw.get("subscriptions", []):
             item = SubscriptionRecord.model_validate(entry)
             self._index_subscription(item)
