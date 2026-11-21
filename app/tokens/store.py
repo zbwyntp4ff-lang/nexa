@@ -67,8 +67,10 @@ class TokenStore:
                 import fcntl
 
                 fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        except OSError:
-            pass
+        except OSError as exc:
+            raise RuntimeError(
+                f"Cannot acquire NEXA token-store lock at {lock_file.name}: {exc}"
+            ) from exc
 
     @staticmethod
     def _release_file_lock(lock_file) -> None:
