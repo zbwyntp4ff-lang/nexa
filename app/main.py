@@ -14,6 +14,7 @@ from app.api.routes import (
     attachments,
     auth,
     billing,
+    beta,
     build,
     chat,
     conversations,
@@ -268,6 +269,7 @@ app.include_router(auth.router)
 app.include_router(agents.router)
 app.include_router(profile.router)
 app.include_router(billing.router)
+app.include_router(beta.router)
 app.include_router(tokens.router)
 app.include_router(model.router)
 app.include_router(models.router)
