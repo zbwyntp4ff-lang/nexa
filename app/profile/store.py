@@ -20,14 +20,20 @@ class ProfileStore:
             return
         try:
             raw = json.loads(self._path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return
+        except (json.JSONDecodeError, OSError) as exc:
+            # An empty profile map would overwrite the only copy of user
+            # preferences on the next update; fail startup instead.
+            raise RuntimeError(
+                f"Cannot load NEXA profile store at {self._path}: {exc}"
+            ) from exc
         for entry in raw.get("profiles", []):
             try:
                 profile = UserProfile.model_validate(entry)
-                self._profiles[profile.user_id] = profile
-            except Exception:  # noqa: BLE001 — skip corrupt rows
-                continue
+            except Exception as exc:  # noqa: BLE001
+                raise RuntimeError(
+                    f"Invalid profile record in NEXA profile store at {self._path}: {exc}"
+                ) from exc
+            self._profiles[profile.user_id] = profile
 
     def _flush(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
