@@ -18,6 +18,16 @@ const OUT_DIR = __dirname;
 // single oversized (e.g. 1080x1080) frame with "invalid icon file size" -
 // each frame must be a normal icon resolution.
 const ICO_SIZES = [16, 24, 32, 48, 64, 128, 256];
+async function convertPngToIco(framePaths) {
+  // png-to-ico v3 is ESM-first; load its default export from this CommonJS script.
+  const module = await import("png-to-ico");
+  const convert = module.default || module;
+  if (typeof convert !== "function") {
+    throw new TypeError("png-to-ico did not expose a callable default export");
+  }
+  return convert(framePaths);
+}
+
 async function main() {
   // png-to-ico v3 is ESM-only; load its default export from this CommonJS script.
   const { default: pngToIco } = await import("png-to-ico");
@@ -33,14 +43,18 @@ async function main() {
       return framePath;
     })
   );
-  const icoBuffer = await pngToIco(framePaths);
+  const icoBuffer = await convertPngToIco(framePaths);
   fs.writeFileSync(path.join(OUT_DIR, "icon.ico"), icoBuffer);
   // A single reasonably-sized PNG is enough for Linux/tray icons.
   await sharp(SOURCE_LOGO).resize(512, 512).png().toFile(path.join(OUT_DIR, "icon.png"));
   fs.rmSync(tmpDir, { recursive: true, force: true });
   console.log("Generated build/icon.ico and build/icon.png from the existing NEXA logo.");
 }
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
+
+module.exports = { convertPngToIco };
