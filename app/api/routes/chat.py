@@ -4,9 +4,11 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+from app.beta.guest_quota import consume_guest_request
 
 from app.api.deps import (
     get_auth_service,
@@ -26,7 +28,7 @@ from app.gateway.models import StreamEvent
 from app.learning.memory_context import build_memory_hint
 from app.learning.settings import get_learning_settings
 from app.memory.manager import MemoryManager
-from app.models.chat import ChatRequest, ChatResponse
+from app.models.chat import ChatRequest, ChatResponse, ChatRole
 from app.models.errors import NexaError
 from app.profile.models import ProjectPersonalization
 from app.profile.service import ProfileService
@@ -43,6 +45,11 @@ def resolve_chat_user(
     auth: Annotated[AuthService, Depends(get_auth_service)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> UserRecord | None:
+    if settings.nexa_public_beta:
+        # Every visitor on the public-beta host uses the same guest allowance,
+        # even if an old account cookie is present in this browser.
+        consume_guest_request(request)
+        return None
     token = _extract_token(request, credentials)
     if not token:
         if settings.tokens_enforce:
@@ -54,6 +61,43 @@ def resolve_chat_user(
         if settings.tokens_enforce:
             raise
         return None
+
+
+def _apply_public_beta_restrictions(
+    request: ChatRequest,
+    user: UserRecord | None,
+    settings: Settings,
+) -> ChatRequest:
+    """Keep anonymous beta traffic on the default text-chat path."""
+    if not settings.nexa_public_beta or user is not None:
+        return request
+    if len(request.message) > 3000:
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "error": "beta_message_too_long",
+                "message": "В бета-версии длина одного сообщения ограничена 3000 символами.",
+            },
+        )
+    history = [
+        message.model_copy(update={"content": message.content[:3000], "images": []})
+        for message in request.history[-10:]
+        if message.role in {ChatRole.USER, ChatRole.ASSISTANT}
+    ]
+    return request.model_copy(
+        update={
+            "model": None,
+            "task": None,
+            "history": history,
+            "attachment_ids": [],
+            "use_knowledge_base": False,
+            "knowledge_project_id": None,
+            "knowledge_conversation_id": None,
+            "knowledge_top_k": None,
+            "project_personalization": None,
+            "apply_personalization": False,
+        }
+    )
 
 
 def _with_learning_context(
@@ -133,6 +177,7 @@ async def chat(
     x_request_id: Annotated[str | None, Header()] = None,
 ) -> ChatResponse:
     request = _with_learning_context(request, user, profiles, memory)
+    request = _apply_public_beta_restrictions(request, user, settings)
     if user is None or not settings.tokens_enforce:
         return await core.chat(request)
 
@@ -164,6 +209,7 @@ async def chat_stream(
 ) -> StreamingResponse:
     """Server-sent events. Each event is a JSON object (meta, delta, or done)."""
     request = _with_learning_context(request, user, profiles, memory)
+    request = _apply_public_beta_restrictions(request, user, settings)
     rid = resolve_request_id(getattr(request, "request_id", None), x_request_id)
 
     async def events() -> AsyncIterator[str]:
