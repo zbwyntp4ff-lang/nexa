@@ -115,6 +115,13 @@ def build_provider_registry(settings: Settings) -> ProviderRegistry:
             model=model_id,
             timeout_seconds=timeout,
         )
+    def hexa_factory(model_id: str) -> AIProvider:
+        from app.providers.hexa_provider import Hexa45Provider
+        return Hexa45Provider(
+            base_url=settings.hexa_model_url,
+            model=model_id or settings.hexa_model_name,
+            timeout_seconds=timeout,
+        )
     def mock_factory(model_id: str) -> AIProvider:
         from app.providers.mock import MockProvider
         return MockProvider(model_name=model_id or "nexa-mock-1")
@@ -125,6 +132,7 @@ def build_provider_registry(settings: Settings) -> ProviderRegistry:
     registry.register("ollama", ollama_factory)
     registry.register("local", local_factory)
     registry.register("mock", mock_factory)
+    registry.register("hexa", hexa_factory)
     return registry
 def initial_selection(settings: Settings) -> Selection:
     raw = (settings.model_selection or "").strip().lower()
@@ -139,6 +147,7 @@ def initial_selection(settings: Settings) -> Selection:
         "gemini": settings.gemini_model,
         "openrouter": settings.openrouter_model,
         "ollama": settings.local_model_name,
+        "hexa": settings.hexa_model_name,
         "mock": "nexa-mock-1",
     }.get(provider, settings.local_model_name)
     return Selection(
@@ -234,6 +243,7 @@ class ModelGateway:
             anthropic_configured=bool(self._settings.anthropic_api_key),
             gemini_configured=bool(self._settings.resolved_gemini_api_key),
             openrouter_configured=bool(self._settings.openrouter_api_key),
+            hexa_configured=bool(self._settings.hexa_model_url),
             include_mock=include_mock,
         )
     async def list_models(self, *, include_mock: bool = False) -> list[ModelCard]:
@@ -245,6 +255,7 @@ class ModelGateway:
             "anthropic": bool(self._settings.anthropic_api_key),
             "gemini": bool(self._settings.resolved_gemini_api_key),
             "openrouter": bool(self._settings.openrouter_api_key),
+            "hexa": bool(self._settings.hexa_model_url),
             "ollama": self._models._ollama_reachable is not False,
             "local": self._models._ollama_reachable is not False,
             "mock": self._allow_mock_cards(),
