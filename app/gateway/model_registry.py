@@ -40,6 +40,7 @@ class ModelRegistry:
         anthropic_configured: bool,
         gemini_configured: bool = False,
         openrouter_configured: bool = False,
+        hexa_configured: bool = False,
         include_mock: bool = True,
     ) -> list[ModelCard]:
         configured = {
@@ -47,6 +48,7 @@ class ModelRegistry:
             "anthropic": anthropic_configured,
             "gemini": gemini_configured,
             "openrouter": openrouter_configured,
+            "hexa": hexa_configured,
         }
         result: list[ModelCard] = []
         for card in self._static:
