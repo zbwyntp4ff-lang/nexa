@@ -46,3 +46,21 @@ def test_hexa_can_be_selected_from_application_settings() -> None:
     selection = initial_selection(settings)
     assert selection.provider == "hexa"
     assert selection.model_id == "hexa-4.5"
+
+
+def test_hexa_catalog_reports_missing_inference_endpoint() -> None:
+    from app.gateway.catalog import static_catalog
+    from app.gateway.model_registry import ModelRegistry
+
+    registry = ModelRegistry(static_catalog())
+    cards = registry.cards(
+        openai_configured=False,
+        anthropic_configured=False,
+        gemini_configured=False,
+        openrouter_configured=False,
+        hexa_configured=False,
+        include_mock=False,
+    )
+    hexa = next(card for card in cards if card.provider == "hexa")
+    assert hexa.availability == "unavailable"
+    assert hexa.availability_reason == "missing_model_endpoint"
