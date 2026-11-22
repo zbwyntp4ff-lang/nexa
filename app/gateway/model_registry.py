@@ -58,7 +58,9 @@ class ModelRegistry:
             if card.provider in configured:
                 ok = configured[card.provider]
                 copy.availability = "available" if ok else "unavailable"
-                copy.availability_reason = None if ok else "missing_api_key"
+                copy.availability_reason = (
+                    None if ok else ("missing_model_endpoint" if card.provider == "hexa" else "missing_api_key")
+                )
             elif card.provider == "mock":
                 copy.availability = "available"
                 copy.availability_reason = None
