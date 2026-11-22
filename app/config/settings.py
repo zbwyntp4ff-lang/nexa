@@ -9,7 +9,7 @@ from typing import Literal
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 ProviderName = Literal[
-    "mock", "openai", "anthropic", "gemini", "openrouter", "local", "ollama", "nexa"
+    "mock", "openai", "anthropic", "gemini", "openrouter", "local", "ollama", "hexa"
 ]
 # Providers that are already implemented. ``ollama`` is the local server
 # under its product name; ``local`` remains as the original alias.
@@ -21,6 +21,7 @@ SUPPORTED_PROVIDERS: tuple[str, ...] = (
     "openrouter",
     "local",
     "ollama",
+    "hexa",
 )
 class Settings(BaseSettings):
     """Central application settings, populated from the environment."""
@@ -94,6 +95,9 @@ class Settings(BaseSettings):
         default="http://localhost:11434", alias="LOCAL_MODEL_URL"
     )
     local_model_name: str = Field(default="llama3.2:3b", alias="LOCAL_MODEL_NAME")
+    # Dedicated HEXA inference endpoint; Ollama-compatible API, weights hosted separately.
+    hexa_model_url: str = Field(default="", alias="HEXA_MODEL_URL")
+    hexa_model_name: str = Field(default="hexa-4.5", alias="HEXA_MODEL_NAME")
     # --- Model gateway (Part 7A) ------------------------------------------
     # Empty = pin the provider/model selected by AI_PROVIDER. "auto" lets
     # the selection policy choose an available model for the task.
