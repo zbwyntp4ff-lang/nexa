@@ -264,6 +264,8 @@ class ModelGateway:
         availability = "available" if configured else "unavailable"
         if provider in ("openai", "anthropic", "gemini", "openrouter") and not configured:
             reason = "missing_api_key"
+        if provider == "hexa" and not configured:
+            reason = "missing_model_endpoint"
         if provider in ("ollama", "local") and self._models._ollama_reachable is False:
             reason = "provider_unavailable"
             availability = "unavailable"
