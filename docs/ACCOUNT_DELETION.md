@@ -30,13 +30,17 @@ Only the authenticated session owner (`Authorization: Bearer` / session cookie).
 | Other devices' browser / Electron localStorage | Not remotely wiped; this client clears chat bucket on delete/logout |
 | CDN edge caches | N/A for private JSON/SQL; no CDN purge API |
 
+## Billing deletion behavior
+
+Before deleting local account data, NEXA attempts to cancel any non-terminal Stripe subscription immediately (`at_period_end=false`). If Stripe is unavailable or does not confirm cancellation, account deletion is stopped. After confirmation, local subscription, invoice, payment, customer-map and usage records are removed. Stripe Customer objects, provider-side invoices, backups and provider retention are not automatically erased.
+
 ## External providers (separate deletion / retention)
 
 | Provider | NEXA action | Operator / user action |
 |----------|-------------|-------------------------|
 | OpenAI / Anthropic / Gemini / OpenRouter | Stops sending new traffic for deleted user | Provider logs/prompts follow **their** retention; contact provider if erasure required |
 | SMTP / email | No further mail to that address | Mailbox copies of verification codes may remain with mail host |
-| Stripe (if enabled) | App billing store row cleared; Stripe Customer not auto-deleted | Delete/anonymize Customer in Stripe Dashboard or API |
+| Stripe (if enabled) | Active subscription is canceled immediately before account deletion; local billing records are cleared after confirmation. Stripe Customer and provider-side invoices remain | Delete/anonymize Customer and handle provider-side retention in Stripe Dashboard or API |
 | OAuth IdPs (Google/GitHub/…) | Local link removed with user | Revoke app access in the IdP account settings |
 | Replicate / fal (video) | No further jobs | Provider job history per their policy |
 
