@@ -145,7 +145,7 @@ class ModelSelectionPolicy:
         allow_cloud_for_local: bool,
     ) -> list[ModelCard]:
         available = [card for card in cards if card.availability == "available"]
-        local = [card for card in available if card.provider in ("ollama", "local")]
+        local = [card for card in available if card.provider in ("ollama", "local", "mock")]
         cloud = [card for card in available if card.provider not in ("ollama", "local", "mock")]
         if kind == TaskKind.LOCAL:
             if local:
