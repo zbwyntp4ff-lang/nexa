@@ -114,3 +114,107 @@ async def test_agent_document_context_uses_local_gateway(monkeypatch):
         "task_kind": TaskKind.LOCAL,
         "allow_fallback": False,
     }
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_core_forces_local_for_attachments(monkeypatch):
+    from app.config.settings import Settings
+    from app.core.nexa_core import NexaCore
+    from app.gateway.models import GatewayResult
+    from app.models.chat import ChatMessage, ChatRequest, ChatRole
+
+    monkeypatch.setattr(
+        "app.learning.settings.get_learning_settings",
+        lambda: LearningSettings(allow_cloud_on_documents=False),
+    )
+
+    class FakeProvider:
+        name = "mock"
+        model_name = "mock-model"
+
+    class FakeGateway:
+        def __init__(self):
+            self.kwargs = None
+
+        async def chat(self, messages, **kwargs):
+            self.kwargs = kwargs
+            return GatewayResult(
+                text="Local summary",
+                provider="ollama",
+                model_id="local-model",
+                display_name="Local model",
+            )
+
+    gateway = FakeGateway()
+    core = NexaCore(FakeProvider(), Settings(_env_file=None), gateway=gateway)
+    monkeypatch.setattr(
+        core,
+        "_resolve_attachments",
+        lambda request: ([ChatMessage(role=ChatRole.SYSTEM, content="PRIVATE")], [], ["doc-1"]),
+    )
+    monkeypatch.setattr(core, "_wants_live_web", lambda request: False)
+
+    response = await core.chat(
+        ChatRequest(message="Summarize", model="gpt-4o", attachment_ids=["doc-1"])
+    )
+
+    assert response.provider == "ollama"
+    assert gateway.kwargs == {
+        "model": "auto",
+        "task_kind": TaskKind.LOCAL,
+        "allow_fallback": False,
+        "images": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_core_forces_local_for_knowledge_context(monkeypatch):
+    from app.config.settings import Settings
+    from app.core.nexa_core import NexaCore
+    from app.gateway.models import StreamEvent
+    from app.knowledge.models import RetrievalResult
+    from app.models.chat import ChatRequest
+
+    monkeypatch.setattr(
+        "app.learning.settings.get_learning_settings",
+        lambda: LearningSettings(allow_cloud_on_documents=False),
+    )
+
+    class FakeProvider:
+        name = "mock"
+        model_name = "mock-model"
+
+    class FakeKnowledge:
+        def search(self, *args, **kwargs):
+            return RetrievalResult(chunks=[SimpleNamespace()], citations=[], context_text="PRIVATE", insufficient=False)
+
+        def build_context_message(self, result):
+            from app.models.chat import ChatMessage, ChatRole
+            return ChatMessage(role=ChatRole.SYSTEM, content="PRIVATE")
+
+    class FakeGateway:
+        def __init__(self):
+            self.kwargs = None
+
+        async def stream(self, messages, **kwargs):
+            self.kwargs = kwargs
+            yield StreamEvent(type="done", provider="ollama", model="local-model")
+
+    gateway = FakeGateway()
+    core = NexaCore(
+        FakeProvider(),
+        Settings(_env_file=None),
+        gateway=gateway,
+        knowledge_base=FakeKnowledge(),
+    )
+    events = [
+        event
+        async for event in core.stream_events(
+            ChatRequest(message="Summarize my files", model="gpt-4o", use_knowledge_base=True)
+        )
+    ]
+
+    assert events[-1].type == "done"
+    assert gateway.kwargs["model"] == "auto"
+    assert gateway.kwargs["task_kind"] == TaskKind.LOCAL
+    assert gateway.kwargs["allow_fallback"] is False
