@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
@@ -67,46 +68,56 @@ class ProjectManifest(BaseModel):
 
 
 class ManifestStore:
-    """JSON manifests under ``<sandbox>/projects/<user_or_shared>/``."""
+    """JSON manifests under the projects/<user_or_shared>/ directory."""
+
+    _USER_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+    _PROJECT_ID_RE = __import__("re").compile(r"^[0-9a-f]{32}$")
 
     def __init__(self, root: Path) -> None:
         self._root = root.resolve()
         self._root.mkdir(parents=True, exist_ok=True)
 
     def _dir(self, user_id: str | None) -> Path:
-        # Isolate by user when known; otherwise shared local bucket.
-        bucket = user_id or "_local"
-        safe = "".join(c for c in bucket if c.isalnum() or c in "-_")[:64] or "_local"
-        path = self._root / safe
+        """Return one exact tenant bucket; never normalize IDs into collisions."""
+        if user_id is None:
+            bucket = "_local"
+        else:
+            uid = str(user_id).strip()
+            if not self._USER_ID_RE.fullmatch(uid):
+                raise ValueError("Invalid project owner identifier.")
+            bucket = uid
+        path = (self._root / bucket).resolve()
+        try:
+            path.relative_to(self._root)
+        except ValueError as exc:
+            raise ValueError("Project owner directory escapes storage root.") from exc
         path.mkdir(parents=True, exist_ok=True)
         return path
 
     def save(self, manifest: ProjectManifest) -> Path:
         manifest.touch()
+        if not self._PROJECT_ID_RE.fullmatch(manifest.project_id):
+            raise ValueError("Invalid project identifier.")
         path = self._dir(manifest.user_id) / f"{manifest.project_id}.json"
         path.write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
         return path
 
     def get(self, project_id: str, *, user_id: str | None = None) -> ProjectManifest | None:
-        # Prefer user bucket, then fall back to _local for unauthenticated runs.
-        candidates = []
-        if user_id:
-            candidates.append(self._dir(user_id) / f"{project_id}.json")
-        candidates.append(self._dir(None) / f"{project_id}.json")
-        if user_id:
-            # Do not leak other users' manifests: only scan own + local.
-            pass
-        else:
-            # When no user, only local.
-            candidates = [self._dir(None) / f"{project_id}.json"]
-        for path in candidates:
-            if path.is_file():
-                try:
-                    data = json.loads(path.read_text(encoding="utf-8"))
-                    man = ProjectManifest.model_validate(data)
-                    if user_id and man.user_id and man.user_id != user_id:
-                        return None
-                    return man
-                except Exception:  # noqa: BLE001
-                    continue
-        return None
+        """Load only from the caller's exact bucket.
+
+        Authenticated users never fall back to the shared local bucket: doing
+        so could expose ownerless manifests created by a desktop/local session.
+        """
+        if not self._PROJECT_ID_RE.fullmatch(project_id):
+            return None
+        path = self._dir(user_id) / f"{project_id}.json"
+        if not path.is_file():
+            return None
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            man = ProjectManifest.model_validate(data)
+        except (OSError, json.JSONDecodeError, ValueError, TypeError):
+            return None
+        if man.user_id != user_id:
+            return None
+        return man
