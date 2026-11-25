@@ -93,31 +93,19 @@ class ResultStore:
         return path if path.is_file() else None
 
     def get(self, file_id: str, *, user_id: str | None = None) -> GeneratedFile | None:
-        """Return a result if the caller may access it.
+        """Return a result only to its exact owner.
 
-        When ``TOKENS_ENFORCE`` is on (multi-user cloud), ownerless records are
-        denied and ``user_id`` must match ``rec.user_id``. Local single-user
-        mode still allows legacy ownerless files for desktop convenience.
+        ``None`` is the local/unauthenticated owner. Ownerless legacy files remain
+        available in local mode, but are never exposed to an authenticated user.
+        This check is independent of TOKENS_ENFORCE: optional authentication must
+        not turn the shared local namespace into a cross-account file namespace.
         """
         rec = self._index.get(file_id)
-        if rec is None:
-            return None
-        enforce = False
-        try:
-            from app.config.settings import get_settings
-
-            enforce = bool(get_settings().tokens_enforce)
-        except Exception:  # noqa: BLE001
-            enforce = False
-        if enforce:
-            if not user_id or not rec.user_id or rec.user_id != user_id:
-                return None
-        elif user_id is not None and rec.user_id and rec.user_id != user_id:
+        if rec is None or rec.user_id != user_id:
             return None
         if self.absolute_path(file_id) is None:
             return None
         return rec
-
     def save_bytes(
         self,
         data: bytes,
