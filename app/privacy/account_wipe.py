@@ -9,6 +9,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from app.auth.store import AuthStore
+from app.billing.store import BillingStore
 from app.core.paths import resolve_under_project_root
 from app.knowledge.knowledge_base import KnowledgeBase
 from app.knowledge_core.feedback import delete_feedback_for_user
@@ -28,6 +29,7 @@ class AccountWipeReport(BaseModel):
     video_jobs_deleted: int = 0
     profile_deleted: bool = False
     tokens_cleared: bool = False
+    billing_records_deleted: int = 0
     sessions_revoked: int = 0
     user_deleted: bool = False
     details: list[str] = Field(default_factory=list)
@@ -49,6 +51,7 @@ def wipe_user_account(
     knowledge: KnowledgeBase,
     tokens: TokenStore | None = None,
     profiles: ProfileStore | None = None,
+    billing: BillingStore | None = None,
 ) -> AccountWipeReport:
     """Best-effort purge of user-owned data. Does not touch other users."""
     report = AccountWipeReport(user_id=user_id)
@@ -92,6 +95,11 @@ def wipe_user_account(
         )
     except Exception as exc:  # noqa: BLE001
         report.details.append(f"video_jobs: {exc}")
+    if billing is not None:
+        try:
+            report.billing_records_deleted = billing.delete_user_data(user_id)
+        except Exception as exc:  # noqa: BLE001
+            report.details.append(f"billing: {exc}")
     if profiles is not None:
         try:
             profiles.delete(user_id)

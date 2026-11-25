@@ -112,6 +112,46 @@ class BillingStore:
             sid = self._by_provider_sub.get(provider_subscription_id)
             return self._subscriptions.get(sid) if sid else None
 
+    def delete_user_data(self, user_id: str) -> int:
+        """Remove local billing records for an account after provider cancellation."""
+        with self._lock:
+            subscription_ids = {
+                sid for sid, item in self._subscriptions.items() if item.user_id == user_id
+            }
+            provider_subscription_ids = {
+                item.provider_subscription_id
+                for item in self._subscriptions.values()
+                if item.user_id == user_id and item.provider_subscription_id
+            }
+            payment_ids = {pid for pid, item in self._payments.items() if item.user_id == user_id}
+            invoice_ids = {iid for iid, item in self._invoices.items() if item.user_id == user_id}
+            removed = (
+                len(subscription_ids)
+                + len(payment_ids)
+                + len(invoice_ids)
+                + int(user_id in self._customers)
+                + sum(1 for item in self._usage.values() if item.user_id == user_id)
+            )
+            for sid in subscription_ids:
+                self._subscriptions.pop(sid, None)
+            for provider_id in provider_subscription_ids:
+                self._by_provider_sub.pop(provider_id, None)
+            self._by_user.pop(user_id, None)
+            for pid in payment_ids:
+                item = self._payments.pop(pid, None)
+                if item:
+                    self._by_provider_payment.pop(item.provider_payment_id, None)
+            for iid in invoice_ids:
+                item = self._invoices.pop(iid, None)
+                if item:
+                    self._by_provider_invoice.pop(item.provider_invoice_id, None)
+            self._usage = {
+                key: item for key, item in self._usage.items() if item.user_id != user_id
+            }
+            self._customers.pop(user_id, None)
+            self._flush()
+            return removed
+
     # --- payments ---------------------------------------------------------
     def save_payment(self, payment: PaymentRecord) -> PaymentRecord:
         with self._lock:

@@ -59,3 +59,15 @@ class NegativeBalanceError(TokenError):
 
     default_message = "Token balance cannot be negative."
     code = "NegativeBalance"
+
+
+
+class TokenIdempotencyConflictError(TokenError):
+    default_message = "This request ID was already used with different charge details."
+    code = "TokenIdempotencyConflict"
+
+
+
+class DuplicateTokenRequestError(TokenError):
+    default_message = "This request ID has already been used for this account."
+    code = "DuplicateTokenRequest"

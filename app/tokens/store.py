@@ -108,7 +108,9 @@ class TokenStore:
             self._ledger.append(LedgerEntry.model_validate(entry))
         for entry in raw.get("charges", []):
             item = ChargeRecord.model_validate(entry)
-            self._charges[item.request_id] = item
+            # Scope idempotency to the account. Legacy rows are migrated in-memory
+            # to the same composite key when the store is next written.
+            self._charges[self._charge_key(item.user_id, item.request_id)] = item
 
     def _flush(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -130,12 +132,16 @@ class TokenStore:
             raise NegativeBalanceError()
         self._accounts[account.user_id] = account
 
-    def charge_get(self, request_id: str) -> ChargeRecord | None:
-        c = self._charges.get(request_id)
+    @staticmethod
+    def _charge_key(user_id: str, request_id: str) -> str:
+        return f"{len(user_id)}:{user_id}{request_id}"
+
+    def charge_get(self, request_id: str, user_id: str) -> ChargeRecord | None:
+        c = self._charges.get(self._charge_key(user_id, request_id))
         return c.model_copy(deep=True) if c else None
 
     def charge_set(self, charge: ChargeRecord) -> None:
-        self._charges[charge.request_id] = charge
+        self._charges[self._charge_key(charge.user_id, charge.request_id)] = charge
 
     def ledger_append(self, entry: LedgerEntry) -> None:
         self._ledger.append(entry)

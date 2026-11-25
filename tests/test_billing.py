@@ -51,7 +51,7 @@ class _FakeStripeProvider:
     def cancel_subscription(self, sub_id: str, *, at_period_end: bool = True) -> dict[str, Any]:
         sub = dict(self.subscriptions[sub_id])
         sub["cancel_at_period_end"] = at_period_end
-        sub["status"] = "active"
+        sub["status"] = "active" if at_period_end else "canceled"
         self.subscriptions[sub_id] = sub
         return sub
 
@@ -270,3 +270,134 @@ def test_webhook_cancel_moves_to_free(tmp_path: Path):
     result = svc.handle_webhook(json.dumps(event).encode("utf-8"), "sig_ok")
     assert result["status"] == "processed"
     assert svc._entitlements.snapshot("u1")["plan"] == "free"
+
+
+
+def test_stale_deleted_subscription_event_does_not_downgrade_current_plan(tmp_path: Path):
+    import json
+
+    store = BillingStore(tmp_path / "billing.json")
+    provider = _FakeStripeProvider(configured=True)
+    store.save_subscription(
+        SubscriptionRecord(
+            id="sub_old_local",
+            user_id="u1",
+            plan="starter",
+            status="canceled",
+            provider_subscription_id="sub_old",
+        )
+    )
+    store.save_subscription(
+        SubscriptionRecord(
+            id="sub_new_local",
+            user_id="u1",
+            plan="pro",
+            status="active",
+            provider_subscription_id="sub_new",
+        )
+    )
+    svc = BillingService(
+        store,
+        provider,
+        EntitlementService(store),
+        _settings(stripe_secret_key="sk_test_x", stripe_webhook_secret="whsec_x"),
+    )
+    event = {
+        "id": "evt_old_sub_deleted",
+        "type": "customer.subscription.deleted",
+        "data": {
+            "object": {
+                "id": "sub_old",
+                "customer": "cus_1",
+                "metadata": {"nexa_user_id": "u1"},
+            }
+        },
+    }
+
+    result = svc.handle_webhook(json.dumps(event).encode("utf-8"), "sig_ok")
+
+    assert result["status"] == "processed"
+    current = store.get_subscription_for_user("u1")
+    assert current is not None
+    assert current.provider_subscription_id == "sub_new"
+    assert current.plan == "pro"
+    assert svc._entitlements.snapshot("u1")["plan"] == "pro"
+
+
+def test_account_deletion_cancels_live_stripe_subscription(tmp_path: Path):
+    store = BillingStore(tmp_path / "billing.json")
+    provider = _FakeStripeProvider(configured=True)
+    store.save_subscription(
+        SubscriptionRecord(
+            id="sub_live_local",
+            user_id="u1",
+            plan="pro",
+            status="active",
+            provider_subscription_id="sub_live",
+        )
+    )
+    provider.subscriptions["sub_live"] = {
+        "id": "sub_live",
+        "status": "active",
+    }
+    svc = BillingService(
+        store,
+        provider,
+        EntitlementService(store),
+        _settings(stripe_secret_key="sk_test_x", stripe_webhook_secret="whsec_x"),
+    )
+
+    assert svc.cancel_for_account_deletion("u1") is True
+    assert provider.subscriptions["sub_live"]["status"] == "canceled"
+    assert provider.subscriptions["sub_live"]["cancel_at_period_end"] is False
+
+
+
+def test_account_deletion_cannot_proceed_without_stripe_cancellation(tmp_path: Path):
+    from app.billing.errors import BillingNotConfiguredError
+
+    store = BillingStore(tmp_path / "billing.json")
+    store.save_subscription(
+        SubscriptionRecord(
+            id="sub_local",
+            user_id="u1",
+            plan="pro",
+            status="active",
+            provider_subscription_id="sub_live",
+        )
+    )
+    svc = BillingService(
+        store,
+        _FakeStripeProvider(configured=False),
+        EntitlementService(store),
+        _settings(),
+    )
+
+    with pytest.raises(BillingNotConfiguredError):
+        svc.cancel_for_account_deletion("u1")
+
+
+def test_billing_store_deletes_local_user_records(tmp_path: Path):
+    store = BillingStore(tmp_path / "billing.json")
+    store.save_subscription(
+        SubscriptionRecord(
+            id="sub_local",
+            user_id="u1",
+            plan="pro",
+            status="canceled",
+            provider_subscription_id="sub_local_provider",
+        )
+    )
+    store.save_customer(
+        CustomerMap(
+            user_id="u1",
+            provider_customer_id="cus_local",
+            email="u1@example.com",
+        )
+    )
+
+    removed = store.delete_user_data("u1")
+
+    assert removed == 2
+    assert store.get_subscription_for_user("u1") is None
+    assert store.get_customer("u1") is None

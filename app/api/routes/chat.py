@@ -227,13 +227,13 @@ async def chat_stream(
                 yield f"data: {event.model_dump_json()}\n\n"
         except NexaError as exc:
             if charged:
-                tokens.refund(rid, reason="ai_error_refund")
+                tokens.refund(rid, user_id=user.id, reason="ai_error_refund")
             code = getattr(exc, "code", None) or exc.__class__.__name__
             payload = StreamEvent(type="error", error=str(code), message=exc.message)
             yield f"data: {payload.model_dump_json()}\n\n"
         except Exception:
             if charged:
-                tokens.refund(rid, reason="ai_error_refund")
+                tokens.refund(rid, user_id=user.id, reason="ai_error_refund")
             raise
 
     return StreamingResponse(

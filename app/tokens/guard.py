@@ -31,7 +31,7 @@ async def run_with_token_charge(
     try:
         return await work()
     except Exception:
-        tokens.refund(request_id, reason="ai_error_refund")
+        tokens.refund(request_id, user_id=user_id, reason="ai_error_refund")
         raise
 
 
@@ -50,5 +50,5 @@ async def stream_with_token_charge(
         async for item in events:
             yield item
     except Exception:
-        tokens.refund(request_id, reason="ai_error_refund")
+        tokens.refund(request_id, user_id=user_id, reason="ai_error_refund")
         raise
