@@ -29,6 +29,7 @@ from app.agent.tool_selector import ToolSelector
 from app.agent.verifier import Verifier
 from app.core.logging_config import get_logger
 from app.gateway.policy import infer_task_kind
+from app.learning.document_privacy import document_routing_options
 from app.models.chat import ChatMessage, ChatRole
 from app.models.errors import AgentTaskError, NexaError
 logger = get_logger("nexa.agent")
