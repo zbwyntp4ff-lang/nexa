@@ -10,6 +10,7 @@ from app.tokens.errors import (
     InsufficientTokensError,
     InvalidTokenAmountError,
     MonthlyTokenLimitError,
+    TokenIdempotencyConflictError,
 )
 from app.tokens.models import ChargeRecord, LedgerEntry, TokenAccount, utcnow
 from app.tokens.store import TokenStore
@@ -113,11 +114,17 @@ class TokenService:
         if not request_id or not request_id.strip():
             raise InvalidTokenAmountError("request_id is required.")
 
+        request_id = request_id.strip()
+
         def _op(store: TokenStore) -> TokenAccount:
-            existing = store.charge_get(request_id)
+            existing = store.charge_get(request_id, user_id)
             if existing is not None:
-                # Already charged or refunded — never double-debit.
-                acc = store.account_get(user_id) or self._new_account(user_id)
+                # An idempotency key is bound to both owner and operation details.
+                if existing.amount != amount or existing.reason != reason:
+                    raise TokenIdempotencyConflictError()
+                acc = store.account_get(user_id)
+                if acc is None:
+                    raise RuntimeError("Token account missing for an existing charge.")
                 return acc
 
             acc = store.account_get(user_id)
@@ -160,11 +167,13 @@ class TokenService:
 
         return self._store.run_atomic(_op)
 
-    def refund(self, request_id: str, *, reason: str = "ai_error_refund") -> TokenAccount | None:
+    def refund(
+        self, request_id: str, *, user_id: str, reason: str = "ai_error_refund"
+    ) -> TokenAccount | None:
         """Refund a prior charge. Idempotent if already refunded / unknown."""
 
         def _op(store: TokenStore) -> TokenAccount | None:
-            charge = store.charge_get(request_id)
+            charge = store.charge_get(request_id, user_id)
             if charge is None:
                 return None
             if charge.status == "refunded":
@@ -211,7 +220,7 @@ class TokenService:
         try:
             yield account
         except Exception:
-            self.refund(request_id, reason="ai_error_refund")
+            self.refund(request_id, user_id=user_id, reason="ai_error_refund")
             raise
 
     # --- admin ---------------------------------------------------------------
