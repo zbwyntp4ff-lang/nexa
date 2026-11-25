@@ -126,3 +126,59 @@ async def test_manual_missing_key_does_not_swap_to_ollama(monkeypatch):
     with pytest.raises(GatewayError) as exc:
         await gateway.chat([ChatMessage(role=ChatRole.USER, content="hi")])
     assert exc.value.code == AUTHENTICATION_ERROR
+
+
+@pytest.mark.asyncio
+async def test_local_only_document_routing_overrides_manual_cloud_selection(monkeypatch):
+    """A private-document request must not follow a persisted cloud selection."""
+    from app.models.chat import ChatMessage, ChatRole
+
+    settings = Settings(AI_PROVIDER="ollama", _env_file=None)
+    models = ModelRegistry(static_catalog())
+    models.set_ollama(["llama3.2:3b"], reachable=True)
+    gateway = ModelGateway(
+        providers=build_provider_registry(settings),
+        models=models,
+        settings=settings,
+        selection=Selection(
+            mode="manual",
+            provider="openai",
+            model_id="gpt-4o-mini",
+            allow_fallback=True,
+        ),
+    )
+
+    class FakeLocalProvider:
+        name = "ollama"
+        model_name = "llama3.2:3b"
+
+        async def chat(self, messages):
+            return "local-only answer"
+
+    async def no_refresh(force=False):
+        return None
+
+    monkeypatch.setattr(gateway, "refresh_ollama", no_refresh)
+    monkeypatch.setattr(gateway, "_open", lambda card: FakeLocalProvider())
+
+    result = await gateway.chat(
+        [ChatMessage(role=ChatRole.USER, content="Summarize this private document.")],
+        model="auto",
+        task_kind=TaskKind.LOCAL,
+        allow_fallback=False,
+    )
+
+    assert result.provider == "ollama"
+    assert result.model_id == "llama3.2:3b"
+    assert result.text == "local-only answer"
+
+
+def test_local_only_policy_may_use_mock_without_auto_injecting_it():
+    policy = ModelSelectionPolicy()
+    mock = _available("mock", "nexa-mock-1", ["chat", "simple"])
+    assert policy.candidates(
+        TaskKind.LOCAL, [mock], allow_cloud_for_local=False
+    ) == [mock]
+    assert policy.candidates(
+        TaskKind.REASONING, [mock], allow_cloud_for_local=False
+    ) == []

@@ -148,8 +148,11 @@ class ModelSelectionPolicy:
         local = [card for card in available if card.provider in ("ollama", "local")]
         cloud = [card for card in available if card.provider not in ("ollama", "local", "mock")]
         if kind == TaskKind.LOCAL:
-            if local:
-                return _prefer_smaller_local(local)
+            # Mock is a safe in-process provider for tests/development, but must
+            # never leak into ordinary Auto routing as a silent fallback.
+            local_only = [*local, *(card for card in available if card.provider == "mock")]
+            if local_only:
+                return _prefer_smaller_local(local_only)
             if allow_cloud_for_local:
                 return cloud
             return []

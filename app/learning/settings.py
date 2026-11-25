@@ -24,8 +24,13 @@ class LearningSettings(BaseModel):
     auto_knowledge_base: bool = True
     """Default RAG opt-in for chat when Knowledge Base has documents."""
     allow_cloud_on_documents: bool = False
-    """If false, document RAG still runs locally; cloud still sees retrieved text
-    only when the selected chat provider is cloud — warn in UI."""
+    """When false, document context is sent only to local models.
+
+    Cloud routing and cloud fallback are blocked for requests containing
+    attachments or retrieved Knowledge Base document context. If no local
+    model is available, the request fails closed instead of sending the
+    document to a cloud provider.
+    """
     last_index_at: str | None = None
     last_eval_at: str | None = None
     last_eval_summary: str | None = None

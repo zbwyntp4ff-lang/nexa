@@ -101,7 +101,7 @@ class Orchestrator:
         context = self._document_context_for(subtask.agent_type, attachment_ids or [], subtask.description, user_id=user_id)
         try:
             result = await asyncio.wait_for(
-                agent.run(AgentTask(description=subtask.description, context=context, metadata={"user_id": user_id} if user_id else {})),
+                agent.run(AgentTask(description=subtask.description, context=context, metadata=({"user_id": user_id} if user_id else {}) | {"contains_documents": bool(context)})),
                 timeout=self._step_timeout_seconds,
             )
             subtask.result = result.final_answer or ""
