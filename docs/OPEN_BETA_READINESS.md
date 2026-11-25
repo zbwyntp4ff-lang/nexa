@@ -54,6 +54,7 @@ NEXA_PUBLIC_BETA=true
 ENVIRONMENT=production
 NEXA_STORAGE_MODE=persistent
 TOKENS_ENFORCE=true
+GUEST_QUOTA_HASH_KEY=<at-least-32-random-characters>
 TRUSTED_EDGE_RATE_LIMIT_ENABLED=true  # only after CDN/WAF distributed limits are active
 API_RATE_LIMIT_PER_MINUTE=60
 REGISTER_RATE_LIMIT_PER_HOUR=20
