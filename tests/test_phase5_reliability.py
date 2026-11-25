@@ -200,11 +200,24 @@ async def test_e2e_compound_market_pack(tmp_path, monkeypatch):
     monkeypatch.setattr(results_routes, "get_result_store", lambda: store)
     client = TestClient(app)
     fid = files[0]["file_id"]
-    meta = client.get(f"/api/v1/results/{fid}")
-    assert meta.status_code == 200
-    dl = client.get(f"/api/v1/results/{fid}/download")
-    assert dl.status_code == 200
-    assert len(dl.content) > 100
+
+    # An owned result must not be available to an anonymous request.
+    anonymous = client.get(f"/api/v1/results/{fid}")
+    assert anonymous.status_code == 404
+
+    # Simulate the authenticated owner for the authorized download path.
+    from types import SimpleNamespace
+    from app.api.security_deps import require_user_when_enforced
+
+    app.dependency_overrides[require_user_when_enforced] = lambda: SimpleNamespace(id="u-e2e")
+    try:
+        meta = client.get(f"/api/v1/results/{fid}")
+        assert meta.status_code == 200
+        dl = client.get(f"/api/v1/results/{fid}/download")
+        assert dl.status_code == 200
+        assert len(dl.content) > 100
+    finally:
+        app.dependency_overrides.pop(require_user_when_enforced, None)
 
     # Project folder scaffold
     assert any((tmp_path / "projects").rglob("README.md"))

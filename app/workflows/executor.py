@@ -57,7 +57,11 @@ class WorkflowExecutor:
         try:
             result = await asyncio.wait_for(
                 agent.run(
-                    AgentTask(description=task.input or task.description, context=task_context(workflow, task)),
+                    AgentTask(
+                        description=task.input or task.description,
+                        context=task_context(workflow, task),
+                        metadata={"user_id": workflow.user_id} if workflow.user_id else {},
+                    ),
                     cancel_event=cancel_event,
                 ),
                 timeout=task.timeout,
