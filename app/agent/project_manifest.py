@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
@@ -69,7 +70,7 @@ class ProjectManifest(BaseModel):
 class ManifestStore:
     """JSON manifests under the projects/<user_or_shared>/ directory."""
 
-    _USER_ID_RE = __import__("re").compile(r"^[A-Za-z0-9_-]{1,128}$")
+    _USER_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
     _PROJECT_ID_RE = __import__("re").compile(r"^[0-9a-f]{32}$")
 
     def __init__(self, root: Path) -> None:
