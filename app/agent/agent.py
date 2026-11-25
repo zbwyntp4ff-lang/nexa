@@ -361,7 +361,13 @@ class Agent:
                 ]
         except Exception:  # noqa: BLE001 - agent must still answer without Knowledge Core
             pass
-        result = await self._model_gateway.chat(messages, task_kind=kind)
+        metadata = state.task.metadata if isinstance(state.task.metadata, dict) else {}
+        routing_options = document_routing_options(
+            contains_document_context=bool(metadata.get('contains_documents')),
+            model=None,
+            task_kind=kind,
+        )
+        result = await self._model_gateway.chat(messages, **routing_options)
         _RUN_MODEL_PROVIDER.set(result.provider)
         _RUN_MODEL_ID.set(result.model_id)
         _RUN_MODEL_DISPLAY.set(result.display_name)
