@@ -62,7 +62,7 @@ async def run_agent(
         dry_run=request.dry_run,
         context=context or None,
         disabled_tools=frozenset(request.disabled_tools),
-        metadata={"user_id": user.id} if user is not None else {},
+        metadata=({"user_id": user.id} if user is not None else {}) | {"contains_documents": bool(context)},
     )
 
     from app.agent.concurrency import release_agent_slot, try_acquire_agent_slot
