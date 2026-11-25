@@ -151,6 +151,27 @@ class BillingService:
         )
         return {"portal_url": session["url"]}
 
+    def cancel_for_account_deletion(self, user_id: str) -> bool:
+        """Immediately cancel a live provider subscription before erasing its owner."""
+        sub = self._store.get_subscription_for_user(user_id)
+        if not sub or not sub.provider_subscription_id:
+            return False
+        if sub.status in {"canceled", "incomplete_expired"}:
+            return False
+        if not self._provider.configured:
+            raise BillingNotConfiguredError(
+                "Cannot delete this account while its paid subscription cannot be canceled."
+            )
+        result = self._provider.cancel_subscription(
+            sub.provider_subscription_id, at_period_end=False
+        )
+        data = result if isinstance(result, dict) else dict(result)
+        if data.get("status") != "canceled":
+            raise RuntimeError(
+                "Stripe did not confirm immediate subscription cancellation; account deletion was stopped."
+            )
+        return True
+
     def cancel_subscription(self, user: UserRecord) -> SubscriptionRecord:
         sub = self._store.get_subscription_for_user(user.id)
         if not sub or not sub.provider_subscription_id or sub.plan == "free":
@@ -353,15 +374,29 @@ class BillingService:
         self._apply_stripe_subscription(user_id, stripe_sub, fallback_plan=plan)
 
     def _on_subscription_deleted(self, stripe_sub: dict) -> None:
-        existing = self._store.get_subscription_by_provider_id(stripe_sub["id"])
+        deleted_id = str(stripe_sub["id"])
+        existing = self._store.get_subscription_by_provider_id(deleted_id)
         user_id = existing.user_id if existing else self._resolve_user_id(stripe_sub, stripe_sub.get("metadata"))
         if not user_id:
             return
-        record = existing or SubscriptionRecord(id=_uid("sub"), user_id=user_id)
+
+        # Stripe events can arrive late. Never let deletion of an older
+        # subscription downgrade a newer subscription belonging to this user.
+        current = self._store.get_subscription_for_user(user_id)
+        if current is not None and current.provider_subscription_id != deleted_id:
+            logger.info(
+                "ignoring stale subscription.deleted event user=%s subscription=%s current=%s",
+                user_id,
+                deleted_id,
+                current.provider_subscription_id,
+            )
+            return
+
+        record = existing or current or SubscriptionRecord(id=_uid("sub"), user_id=user_id)
         record.plan = "free"
         record.status = "canceled"
         record.cancel_at_period_end = False
-        record.provider_subscription_id = stripe_sub["id"]
+        record.provider_subscription_id = deleted_id
         record.updated_at = utcnow()
         self._store.save_subscription(record)
 
