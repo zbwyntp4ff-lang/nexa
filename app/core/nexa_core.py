@@ -144,7 +144,7 @@ class NexaCore:
         return messages
     def _resolve_attachments(
         self, request: ChatRequest
-    ) -> tuple[list[ChatMessage], list[tuple[bytes, str]], list[str]]:
+    ) -> tuple[list[ChatMessage], list[tuple[bytes, str]], list[str], bool]:
         """Turn ``request.attachment_ids`` into extra context + image payloads.
         Documents become a bounded "Document Context" system message (never
         the full raw file). Images become provider-agnostic byte payloads
@@ -158,7 +158,7 @@ class NexaCore:
         """
         messages = self._build_messages(request)
         if not request.attachment_ids:
-            return messages, [], []
+            return messages, [], [], False
         if len(request.attachment_ids) > self._settings.max_attachments_per_message:
             raise TooManyAttachmentsError(
                 f"This request has {len(request.attachment_ids)} attachments, exceeding the "
@@ -185,9 +185,11 @@ class NexaCore:
             )
         doc_ids = [r.id for r in records if r.kind == AttachmentKind.DOCUMENT]
         image_ids = [r.id for r in records if r.kind == AttachmentKind.IMAGE]
+        has_document_context = False
         if doc_ids:
             context = self.attachments.document_context(doc_ids, query=request.message, user_id=request.knowledge_user_id)
             if context:
+                has_document_context = True
                 messages = [
                     ChatMessage(
                         role=ChatRole.SYSTEM,
@@ -199,7 +201,7 @@ class NexaCore:
                     *messages,
                 ]
         images = self.attachments.image_payloads(image_ids, user_id=request.knowledge_user_id) if image_ids else []
-        return messages, images, [r.id for r in records]
+        return messages, images, [r.id for r in records], has_document_context
     def _resolve_knowledge(self, request: ChatRequest) -> tuple[list[ChatMessage], RetrievalResult | None]:
         """Opt-in RAG step: retrieve, then prepend a labeled context message.
 
@@ -233,11 +235,12 @@ class NexaCore:
         self._validate(request.message)
         prep_started = time.perf_counter()
         if request.attachment_ids:
-            messages, images, attachments_used = self._resolve_attachments(request)
+            messages, images, attachments_used, has_document_attachment_context = self._resolve_attachments(request)
         else:
             messages = self._build_messages(request)
             images = []
             attachments_used = []
+            has_document_attachment_context = False
         if images and self.gateway is None:
             raise ModelCapabilityError("Image input requires the model gateway.")
         if request.use_knowledge_base:
@@ -245,7 +248,7 @@ class NexaCore:
             messages = [*knowledge_messages, *messages]
         else:
             knowledge_result = None
-        contains_document_context = bool(request.attachment_ids) or bool(knowledge_result and knowledge_result.chunks)
+        contains_document_context = has_document_attachment_context or bool(knowledge_result and knowledge_result.chunks)
         routing_options = document_routing_options(contains_document_context=contains_document_context, model=request.model, task_kind=request.task)
         local_only = routing_options.get("allow_fallback") is False
         if local_only and self.gateway is None and not local_provider_is_safe(self._provider.name):
@@ -376,10 +379,11 @@ class NexaCore:
         self._validate(request.message)
         # Skip attachment/knowledge work when unused — common path for plain chat.
         if request.attachment_ids:
-            messages, images, _attachments_used = self._resolve_attachments(request)
+            messages, images, _attachments_used, has_document_attachment_context = self._resolve_attachments(request)
         else:
             messages = self._build_messages(request)
             images = []
+            has_document_attachment_context = False
         if images and self.gateway is None:
             raise ModelCapabilityError("Image input requires the model gateway.")
         if request.use_knowledge_base:
@@ -387,7 +391,7 @@ class NexaCore:
             messages = [*knowledge_messages, *messages]
         else:
             knowledge_result = None
-        contains_document_context = bool(request.attachment_ids) or bool(knowledge_result and knowledge_result.chunks)
+        contains_document_context = has_document_attachment_context or bool(knowledge_result and knowledge_result.chunks)
         routing_options = document_routing_options(contains_document_context=contains_document_context, model=request.model, task_kind=request.task)
         local_only = routing_options.get("allow_fallback") is False
         if local_only and self.gateway is None and not local_provider_is_safe(self._provider.name):
