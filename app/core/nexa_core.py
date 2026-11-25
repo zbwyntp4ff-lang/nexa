@@ -13,6 +13,7 @@ from app.attachments.manager import AttachmentManager
 from app.attachments.models import AttachmentKind, AttachmentStatus
 from app.config.settings import Settings
 from app.core.logging_config import get_logger
+from app.learning.document_privacy import document_routing_options, local_provider_is_safe
 from app.knowledge.knowledge_base import KnowledgeBase
 from app.knowledge.models import RetrievalResult
 from app.models.chat import ChatCitation, ChatMessage, ChatRequest, ChatResponse, ChatRole
@@ -244,6 +245,11 @@ class NexaCore:
             messages = [*knowledge_messages, *messages]
         else:
             knowledge_result = None
+        contains_document_context = bool(request.attachment_ids) or bool(knowledge_result and knowledge_result.chunks)
+        routing_options = document_routing_options(contains_document_context=contains_document_context, model=request.model, task_kind=request.task)
+        local_only = routing_options.get("allow_fallback") is False
+        if local_only and self.gateway is None and not local_provider_is_safe(self._provider.name):
+            raise ModelCapabilityError("Document context is restricted to local models, but no local model gateway is configured.")
         web_citations: list[ChatCitation] = []
         if self._wants_live_web(request):
             web_messages, web_citations = await self._resolve_live_web(request.message)
@@ -265,7 +271,7 @@ class NexaCore:
             if self.gateway is not None:
                 result = await asyncio.wait_for(
                     self.gateway.chat(
-                        messages, model=request.model, task_kind=request.task, images=images or None
+                        messages, **routing_options, images=images or None
                     ),
                     timeout=self._settings.request_timeout_seconds,
                 )
@@ -381,6 +387,11 @@ class NexaCore:
             messages = [*knowledge_messages, *messages]
         else:
             knowledge_result = None
+        contains_document_context = bool(request.attachment_ids) or bool(knowledge_result and knowledge_result.chunks)
+        routing_options = document_routing_options(contains_document_context=contains_document_context, model=request.model, task_kind=request.task)
+        local_only = routing_options.get("allow_fallback") is False
+        if local_only and self.gateway is None and not local_provider_is_safe(self._provider.name):
+            raise ModelCapabilityError("Document context is restricted to local models, but no local model gateway is configured.")
         citations = (
             [c.model_dump(mode="json") for c in knowledge_result.citations]
             if knowledge_result and not knowledge_result.insufficient
