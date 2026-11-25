@@ -40,6 +40,7 @@ class ModelRegistry:
         anthropic_configured: bool,
         gemini_configured: bool = False,
         openrouter_configured: bool = False,
+        hexa_configured: bool = False,
         include_mock: bool = True,
     ) -> list[ModelCard]:
         configured = {
@@ -47,6 +48,7 @@ class ModelRegistry:
             "anthropic": anthropic_configured,
             "gemini": gemini_configured,
             "openrouter": openrouter_configured,
+            "hexa": hexa_configured,
         }
         result: list[ModelCard] = []
         for card in self._static:
@@ -56,7 +58,9 @@ class ModelRegistry:
             if card.provider in configured:
                 ok = configured[card.provider]
                 copy.availability = "available" if ok else "unavailable"
-                copy.availability_reason = None if ok else "missing_api_key"
+                copy.availability_reason = (
+                    None if ok else ("missing_model_endpoint" if card.provider == "hexa" else "missing_api_key")
+                )
             elif card.provider == "mock":
                 copy.availability = "available"
                 copy.availability_reason = None

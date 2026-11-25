@@ -68,4 +68,11 @@ class ProviderFactory:
                 model=settings.local_model_name,
                 timeout_seconds=settings.request_timeout_seconds,
             )
+        if provider_name == "hexa":
+            from app.providers.hexa_provider import Hexa45Provider
+            return Hexa45Provider(
+                base_url=settings.hexa_model_url,
+                model=settings.hexa_model_name,
+                timeout_seconds=settings.request_timeout_seconds,
+            )
         raise UnknownProviderError(provider_name, available=SUPPORTED_PROVIDERS)

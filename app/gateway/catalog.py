@@ -154,6 +154,16 @@ def static_catalog() -> list[ModelCard]:
             supports_streaming=True,
         ),
         ModelCard(
+            provider="hexa",
+            model_id="hexa-4.5",
+            display_name="HEXA 4.5",
+            capabilities=["chat", "coding"],
+            context_window=None,
+            supports_vision=False,
+            supports_tools=False,
+            supports_streaming=True,
+        ),
+        ModelCard(
             provider="mock",
             model_id="nexa-mock-1",
             display_name="NEXA Mock",
