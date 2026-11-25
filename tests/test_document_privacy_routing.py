@@ -265,3 +265,29 @@ async def test_image_only_attachment_keeps_selected_cloud_vision_model(monkeypat
     assert gateway.kwargs["model"] == "gpt-4o"
     assert gateway.kwargs["images"] == [(b"image", "image/png")]
     assert "allow_fallback" not in gateway.kwargs
+
+
+@pytest.mark.asyncio
+async def test_missing_gateway_fails_closed_for_document_context(monkeypatch):
+    from app.config.settings import Settings
+    from app.core.nexa_core import NexaCore
+    from app.models.chat import ChatMessage, ChatRequest, ChatRole
+    from app.models.errors import ModelCapabilityError
+
+    monkeypatch.setattr(
+        "app.learning.settings.get_learning_settings",
+        lambda: LearningSettings(allow_cloud_on_documents=False),
+    )
+
+    class CloudProvider:
+        name = "openai"
+        model_name = "gpt-4o"
+
+    core = NexaCore(CloudProvider(), Settings(_env_file=None), gateway=None)
+    monkeypatch.setattr(
+        core,
+        "_resolve_attachments",
+        lambda request: ([ChatMessage(role=ChatRole.SYSTEM, content="PRIVATE")], [], ["doc-1"], True),
+    )
+    with pytest.raises(ModelCapabilityError):
+        await core.chat(ChatRequest(message="Summarize", attachment_ids=["doc-1"]))
