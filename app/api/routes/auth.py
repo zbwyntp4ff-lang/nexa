@@ -240,6 +240,8 @@ async def delete_account(
     """
     from app.api.deps import (
         get_auth_store,
+        get_billing_service,
+        get_billing_store,
         get_memory_manager_dep,
         get_profile_store,
         get_token_store,
@@ -251,6 +253,10 @@ async def delete_account(
     if body.confirm.strip().upper() != "DELETE":
         raise AccountDeleteConfirmError()
 
+    # A live Stripe subscription must be canceled successfully before the
+    # local account is erased. On provider failure, deletion stops here.
+    get_billing_service().cancel_for_account_deletion(user.id)
+
     report = wipe_user_account(
         user_id=user.id,
         auth_store=get_auth_store(),
@@ -258,12 +264,17 @@ async def delete_account(
         knowledge=get_knowledge_base(),
         tokens=get_token_store(),
         profiles=get_profile_store(),
+        billing=get_billing_store(),
     )
     token = _extract_token(request, credentials)
     if token:
         auth.logout(token)
     _clear_session_cookie(response)
-    return {"deleted": True, "report": report.model_dump()}
+    return {
+        "deleted": report.user_deleted,
+        "cleanup_complete": not report.details,
+        "report": report.model_dump(),
+    }
 
 
 @router.post("/forgot-password", response_model=MessageResponse)
