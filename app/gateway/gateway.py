@@ -363,6 +363,13 @@ class ModelGateway:
             return "No model is available for this task."
         return "No model is available for this task. " + "; ".join(reasons) + "."
     def _open(self, card: ModelCard) -> AIProvider:
+        if card.provider == "hexa" and not self._settings.hexa_model_url:
+            raise GatewayError(
+                MODEL_UNAVAILABLE,
+                "HEXA inference endpoint is not configured. Set HEXA_MODEL_URL in the backend environment.",
+                provider="hexa",
+                model=card.model_id,
+            )
         if card.availability_reason == "missing_api_key" or (
             card.provider in ("openai", "anthropic", "gemini", "openrouter")
             and card.availability != "available"
@@ -372,6 +379,13 @@ class ModelGateway:
         try:
             return self._providers.create(card.provider, card.model_id)
         except ProviderConfigurationError as exc:
+            if card.provider == "hexa":
+                raise GatewayError(
+                    MODEL_UNAVAILABLE,
+                    "HEXA inference endpoint is not configured. Set HEXA_MODEL_URL in the backend environment.",
+                    provider="hexa",
+                    model=card.model_id,
+                ) from exc
             raise missing_api_key_error(card.provider) from exc
     def _is_manual_request(self, model: str | None) -> bool:
         manual_model = model.strip() if model else None
