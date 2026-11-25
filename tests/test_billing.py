@@ -350,3 +350,54 @@ def test_account_deletion_cancels_live_stripe_subscription(tmp_path: Path):
     assert svc.cancel_for_account_deletion("u1") is True
     assert provider.subscriptions["sub_live"]["status"] == "canceled"
     assert provider.subscriptions["sub_live"]["cancel_at_period_end"] is False
+
+
+
+def test_account_deletion_cannot_proceed_without_stripe_cancellation(tmp_path: Path):
+    from app.billing.errors import BillingNotConfiguredError
+
+    store = BillingStore(tmp_path / "billing.json")
+    store.save_subscription(
+        SubscriptionRecord(
+            id="sub_local",
+            user_id="u1",
+            plan="pro",
+            status="active",
+            provider_subscription_id="sub_live",
+        )
+    )
+    svc = BillingService(
+        store,
+        _FakeStripeProvider(configured=False),
+        EntitlementService(store),
+        _settings(),
+    )
+
+    with pytest.raises(BillingNotConfiguredError):
+        svc.cancel_for_account_deletion("u1")
+
+
+def test_billing_store_deletes_local_user_records(tmp_path: Path):
+    store = BillingStore(tmp_path / "billing.json")
+    store.save_subscription(
+        SubscriptionRecord(
+            id="sub_local",
+            user_id="u1",
+            plan="pro",
+            status="canceled",
+            provider_subscription_id="sub_local_provider",
+        )
+    )
+    store.save_customer(
+        CustomerMap(
+            user_id="u1",
+            provider_customer_id="cus_local",
+            email="u1@example.com",
+        )
+    )
+
+    removed = store.delete_user_data("u1")
+
+    assert removed == 2
+    assert store.get_subscription_for_user("u1") is None
+    assert store.get_customer("u1") is None
