@@ -428,7 +428,7 @@ class NexaCore:
         ttft_ms: float | None = None
         if self.gateway is not None:
             async for event in self.gateway.stream(
-                messages, model=request.model, task_kind=request.task, images=images or None
+                messages, **routing_options, images=images or None
             ):
                 if event.type == "delta" and first:
                     first = False
