@@ -4,11 +4,13 @@ from __future__ import annotations
 import secrets
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlsplit
 
 from app.auth.models import UserRecord
 from app.billing.entitlements import EntitlementService
 from app.billing.errors import (
     BillingNotConfiguredError,
+    InvalidBillingReturnUrlError,
     PlanNotPurchasableError,
     WebhookSignatureError,
 )
@@ -103,6 +105,28 @@ class BillingService:
         return self._store.save_customer(mapped)
 
     # --- checkout / portal ------------------------------------------------
+    def _validated_return_url(self, candidate: str | None, default_path: str) -> str:
+        """Accept return URLs only on the configured application origin.
+
+        Stripe redirects users after checkout/portal actions, so client-provided
+        URLs must never be allowed to point at an arbitrary external site.
+        """
+        base = (self._settings.billing_public_base_url or "http://localhost:4820").rstrip("/")
+        expected = urlsplit(base)
+        value = candidate or f"{base}{default_path}"
+        parsed = urlsplit(value)
+        if (
+            not expected.scheme
+            or not expected.netloc
+            or not parsed.scheme
+            or not parsed.netloc
+            or parsed.username is not None
+            or parsed.password is not None
+            or (parsed.scheme.lower(), parsed.netloc.lower())
+            != (expected.scheme.lower(), expected.netloc.lower())
+        ):
+            raise InvalidBillingReturnUrlError()
+        return value
     def create_checkout(
         self,
         user: UserRecord,
@@ -121,9 +145,8 @@ class BillingService:
             raise BillingNotConfiguredError()
 
         customer = self._ensure_customer(user)
-        base = (self._settings.billing_public_base_url or "http://localhost:4820").rstrip("/")
-        success = success_url or f"{base}/pricing?checkout=success"
-        cancel = cancel_url or f"{base}/pricing?checkout=cancel"
+        success = self._validated_return_url(success_url, "/pricing?checkout=success")
+        cancel = self._validated_return_url(cancel_url, "/pricing?checkout=cancel")
         session = self._provider.create_checkout_session(
             customer_id=customer.provider_customer_id,
             plan=plan,
@@ -143,8 +166,7 @@ class BillingService:
         if not self._provider.configured:
             raise BillingNotConfiguredError()
         customer = self._ensure_customer(user)
-        base = (self._settings.billing_public_base_url or "http://localhost:4820").rstrip("/")
-        url = return_url or f"{base}/?settings=billing"
+        url = self._validated_return_url(return_url, "/?settings=billing")
         session = self._provider.create_portal_session(
             customer_id=customer.provider_customer_id,
             return_url=url,
