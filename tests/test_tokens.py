@@ -28,6 +28,7 @@ from app.tokens.errors import (
     InsufficientTokensError,
     MonthlyTokenLimitError,
     TokenIdempotencyConflictError,
+    DuplicateTokenRequestError,
     NegativeBalanceError,
     TokenAdminRequiredError,
 )
@@ -95,10 +96,11 @@ def test_daily_and_monthly_limits(token_service: TokenService, tmp_path: Path):
         svc2.charge("u1", 1, request_id="m-overflow", reason="chat")
 
 
-def test_duplicate_request_id_does_not_double_charge(token_service: TokenService):
-    a1 = token_service.charge("u1", 10, request_id="same", reason="chat")
-    a2 = token_service.charge("u1", 10, request_id="same", reason="chat")
-    assert a1.balance == a2.balance == 40
+def test_duplicate_request_id_is_rejected_without_second_execution(token_service: TokenService):
+    first = token_service.charge("u1", 10, request_id="same", reason="chat")
+    with pytest.raises(DuplicateTokenRequestError):
+        token_service.charge("u1", 10, request_id="same", reason="chat")
+    assert first.balance == token_service.get_balance("u1").balance == 40
     history = token_service.get_history("u1", limit=50)
     debits = [e for e in history if e.kind == "debit" and e.request_id == "same"]
     assert len(debits) == 1
