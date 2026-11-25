@@ -270,3 +270,65 @@ def test_webhook_cancel_moves_to_free(tmp_path: Path):
     result = svc.handle_webhook(json.dumps(event).encode("utf-8"), "sig_ok")
     assert result["status"] == "processed"
     assert svc._entitlements.snapshot("u1")["plan"] == "free"
+
+
+
+def test_billing_return_urls_must_match_configured_origin(tmp_path: Path):
+    from app.billing.errors import InvalidBillingReturnUrlError
+
+    store = BillingStore(tmp_path / "billing.json")
+    provider = _FakeStripeProvider(configured=True)
+    svc = BillingService(
+        store,
+        provider,
+        EntitlementService(store),
+        _settings(
+            stripe_secret_key="sk_test_x",
+            stripe_webhook_secret="whsec_x",
+            billing_public_base_url="https://app.example.com",
+        ),
+    )
+
+    with pytest.raises(InvalidBillingReturnUrlError):
+        svc.create_checkout(
+            _user(),
+            plan_id="starter",
+            interval="month",
+            success_url="https://attacker.example/complete",
+        )
+
+    with pytest.raises(InvalidBillingReturnUrlError):
+        svc.create_portal(
+            _user(),
+            return_url="https://attacker.example/account",
+        )
+
+
+def test_billing_return_urls_allow_configured_origin(tmp_path: Path):
+    store = BillingStore(tmp_path / "billing.json")
+    provider = _FakeStripeProvider(configured=True)
+    svc = BillingService(
+        store,
+        provider,
+        EntitlementService(store),
+        _settings(
+            stripe_secret_key="sk_test_x",
+            stripe_webhook_secret="whsec_x",
+            billing_public_base_url="https://app.example.com",
+        ),
+    )
+
+    result = svc.create_checkout(
+        _user(),
+        plan_id="starter",
+        interval="month",
+        success_url="https://app.example.com/pricing?checkout=success",
+        cancel_url="https://app.example.com/pricing?checkout=cancel",
+    )
+    assert result["checkout_url"] == "https://checkout.test/session"
+
+    portal = svc.create_portal(
+        _user(),
+        return_url="https://app.example.com/settings/billing",
+    )
+    assert portal["portal_url"] == "https://billing.test/portal"
