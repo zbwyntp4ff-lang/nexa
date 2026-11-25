@@ -51,7 +51,7 @@ class _FakeStripeProvider:
     def cancel_subscription(self, sub_id: str, *, at_period_end: bool = True) -> dict[str, Any]:
         sub = dict(self.subscriptions[sub_id])
         sub["cancel_at_period_end"] = at_period_end
-        sub["status"] = "active"
+        sub["status"] = "active" if at_period_end else "canceled"
         self.subscriptions[sub_id] = sub
         return sub
 
@@ -348,5 +348,5 @@ def test_account_deletion_cancels_live_stripe_subscription(tmp_path: Path):
     )
 
     assert svc.cancel_for_account_deletion("u1") is True
-    assert provider.subscriptions["sub_live"]["status"] == "active"
+    assert provider.subscriptions["sub_live"]["status"] == "canceled"
     assert provider.subscriptions["sub_live"]["cancel_at_period_end"] is False
