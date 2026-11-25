@@ -171,3 +171,14 @@ async def test_local_only_document_routing_overrides_manual_cloud_selection(monk
     assert result.provider == "ollama"
     assert result.model_id == "llama3.2:3b"
     assert result.text == "local-only answer"
+
+
+def test_local_only_policy_may_use_mock_without_auto_injecting_it():
+    policy = ModelSelectionPolicy()
+    mock = _available("mock", "nexa-mock-1", ["chat", "simple"])
+    assert policy.candidates(
+        TaskKind.LOCAL, [mock], allow_cloud_for_local=False
+    ) == [mock]
+    assert policy.candidates(
+        TaskKind.REASONING, [mock], allow_cloud_for_local=False
+    ) == []
