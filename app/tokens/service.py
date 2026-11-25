@@ -11,6 +11,7 @@ from app.tokens.errors import (
     InvalidTokenAmountError,
     MonthlyTokenLimitError,
     TokenIdempotencyConflictError,
+    DuplicateTokenRequestError,
 )
 from app.tokens.models import ChargeRecord, LedgerEntry, TokenAccount, utcnow
 from app.tokens.store import TokenStore
@@ -122,10 +123,10 @@ class TokenService:
                 # An idempotency key is bound to both owner and operation details.
                 if existing.amount != amount or existing.reason != reason:
                     raise TokenIdempotencyConflictError()
-                acc = store.account_get(user_id)
-                if acc is None:
-                    raise RuntimeError("Token account missing for an existing charge.")
-                return acc
+                # A charge record is also an execution guard. Returning the
+                # account here would let the route run the expensive AI work
+                # again without a second debit.
+                raise DuplicateTokenRequestError()
 
             acc = store.account_get(user_id)
             if acc is None:
