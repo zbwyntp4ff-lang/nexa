@@ -27,6 +27,7 @@ from app.tokens.errors import (
     DailyTokenLimitError,
     InsufficientTokensError,
     MonthlyTokenLimitError,
+    TokenIdempotencyConflictError,
     NegativeBalanceError,
     TokenAdminRequiredError,
 )
@@ -153,7 +154,7 @@ def test_refund_after_ai_error(token_service: TokenService):
     after = token_service.get_balance("u1").balance
     assert after == before
     # second refund is no-op
-    token_service.refund("fail-1")
+    token_service.refund("fail-1", user_id="u1")
     assert token_service.get_balance("u1").balance == before
 
 
@@ -331,3 +332,36 @@ def test_chat_charges_and_refunds_on_error(auth_client, monkeypatch):
     assert bad.status_code == 502
     after = client.get("/api/v1/tokens/balance").json()["balance"]
     assert after == mid  # refunded
+
+
+
+def test_request_id_is_scoped_to_user(token_service: TokenService):
+    token_service.charge("u1", 10, request_id="shared-id", reason="chat")
+    token_service.charge("u2", 10, request_id="shared-id", reason="chat")
+
+    assert token_service.get_balance("u1").balance == 40
+    assert token_service.get_balance("u2").balance == 40
+    assert len([
+        entry for entry in token_service.get_history("u1")
+        if entry.request_id == "shared-id" and entry.kind == "debit"
+    ]) == 1
+    assert len([
+        entry for entry in token_service.get_history("u2")
+        if entry.request_id == "shared-id" and entry.kind == "debit"
+    ]) == 1
+
+
+def test_request_id_cannot_be_reused_with_different_charge(token_service: TokenService):
+    token_service.charge("u1", 10, request_id="fixed-id", reason="chat")
+    with pytest.raises(TokenIdempotencyConflictError):
+        token_service.charge("u1", 5, request_id="fixed-id", reason="image")
+
+
+def test_refund_is_scoped_to_user(token_service: TokenService):
+    token_service.charge("u1", 10, request_id="refund-id", reason="chat")
+    token_service.charge("u2", 10, request_id="refund-id", reason="chat")
+
+    token_service.refund("refund-id", user_id="u2")
+
+    assert token_service.get_balance("u1").balance == 40
+    assert token_service.get_balance("u2").balance == 50
