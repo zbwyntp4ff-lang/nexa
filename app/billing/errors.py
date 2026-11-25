@@ -14,6 +14,11 @@ class BillingNotConfiguredError(BillingError):
     default_message = "Payment provider is not configured. Set Stripe keys in the environment."
 
 
+class InvalidBillingReturnUrlError(BillingError):
+    default_code = "InvalidBillingReturnUrl"
+    default_message = "Billing return URLs must use the configured application origin."
+
+
 class PlanNotPurchasableError(BillingError):
     default_code = "PlanNotPurchasable"
     default_message = "This plan cannot be purchased online."
