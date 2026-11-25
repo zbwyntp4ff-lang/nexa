@@ -218,3 +218,50 @@ async def test_chat_stream_core_forces_local_for_knowledge_context(monkeypatch):
     assert gateway.kwargs["model"] == "auto"
     assert gateway.kwargs["task_kind"] == TaskKind.LOCAL
     assert gateway.kwargs["allow_fallback"] is False
+
+
+@pytest.mark.asyncio
+async def test_image_only_attachment_keeps_selected_cloud_vision_model(monkeypatch):
+    from app.config.settings import Settings
+    from app.core.nexa_core import NexaCore
+    from app.gateway.models import GatewayResult
+    from app.models.chat import ChatMessage, ChatRequest, ChatRole
+
+    monkeypatch.setattr(
+        "app.learning.settings.get_learning_settings",
+        lambda: LearningSettings(allow_cloud_on_documents=False),
+    )
+
+    class FakeProvider:
+        name = "mock"
+        model_name = "mock-model"
+
+    class FakeGateway:
+        def __init__(self):
+            self.kwargs = None
+
+        async def chat(self, messages, **kwargs):
+            self.kwargs = kwargs
+            return GatewayResult(
+                text="Image description",
+                provider="openai",
+                model_id="gpt-4o",
+                display_name="GPT-4o",
+            )
+
+    gateway = FakeGateway()
+    core = NexaCore(FakeProvider(), Settings(_env_file=None), gateway=gateway)
+    monkeypatch.setattr(
+        core,
+        "_resolve_attachments",
+        lambda request: ([ChatMessage(role=ChatRole.USER, content="What is this?")], [(b"image", "image/png")], ["image-1"], False),
+    )
+    monkeypatch.setattr(core, "_wants_live_web", lambda request: False)
+
+    await core.chat(
+        ChatRequest(message="What is this?", model="gpt-4o", attachment_ids=["image-1"])
+    )
+
+    assert gateway.kwargs["model"] == "gpt-4o"
+    assert gateway.kwargs["images"] == [(b"image", "image/png")]
+    assert "allow_fallback" not in gateway.kwargs
