@@ -172,7 +172,7 @@ async def test_chat_stream_core_forces_local_for_knowledge_context(monkeypatch):
     from app.config.settings import Settings
     from app.core.nexa_core import NexaCore
     from app.gateway.models import StreamEvent
-    from app.knowledge.models import RetrievalResult
+    from app.knowledge.models import RetrievalResult, RetrievedChunk
     from app.models.chat import ChatRequest
 
     monkeypatch.setattr(
@@ -186,7 +186,7 @@ async def test_chat_stream_core_forces_local_for_knowledge_context(monkeypatch):
 
     class FakeKnowledge:
         def search(self, *args, **kwargs):
-            return RetrievalResult(chunks=[SimpleNamespace()], citations=[], context_text="PRIVATE", insufficient=False)
+            return RetrievalResult(chunks=[RetrievedChunk(chunk_id="c1", document_id="d1", filename="private.txt", source="upload", text="PRIVATE", score=1.0)], citations=[], context_text="PRIVATE", insufficient=False)
 
         def build_context_message(self, result):
             from app.models.chat import ChatMessage, ChatRole
