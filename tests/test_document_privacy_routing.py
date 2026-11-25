@@ -150,7 +150,7 @@ async def test_chat_endpoint_core_forces_local_for_attachments(monkeypatch):
     monkeypatch.setattr(
         core,
         "_resolve_attachments",
-        lambda request: ([ChatMessage(role=ChatRole.SYSTEM, content="PRIVATE")], [], ["doc-1"]),
+        lambda request: ([ChatMessage(role=ChatRole.SYSTEM, content="PRIVATE")], [], ["doc-1"], True),
     )
     monkeypatch.setattr(core, "_wants_live_web", lambda request: False)
 
@@ -190,7 +190,7 @@ async def test_chat_stream_core_forces_local_for_knowledge_context(monkeypatch):
 
         def build_context_message(self, result):
             from app.models.chat import ChatMessage, ChatRole
-            return ChatMessage(role=ChatRole.SYSTEM, content="PRIVATE")
+            return "PRIVATE"
 
     class FakeGateway:
         def __init__(self):
