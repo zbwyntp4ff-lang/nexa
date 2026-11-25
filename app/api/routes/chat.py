@@ -233,7 +233,7 @@ async def chat_stream(
             yield f"data: {payload.model_dump_json()}\n\n"
         except Exception:
             if charged:
-                tokens.refund(rid, reason="ai_error_refund")
+                tokens.refund(rid, user_id=user.id, reason="ai_error_refund")
             raise
 
     return StreamingResponse(
