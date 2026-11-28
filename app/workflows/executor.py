@@ -41,7 +41,7 @@ class WorkflowExecutor:
             lines.append(f"- {source}: {text[:400]}")
         if not result.chunks:
             lines.append("No matching notes.")
-        output = "\n".join(lines)
+        output = "\\n".join(lines)
         return TaskOutcome(output=output, tool="knowledge_base", tool_calls=1, tokens=len(output), sources=sources)
     async def _run_agent(
         self, workflow: Workflow, task: WorkflowTask, cancel_event: asyncio.Event | None
@@ -57,7 +57,14 @@ class WorkflowExecutor:
         try:
             result = await asyncio.wait_for(
                 agent.run(
-                    AgentTask(description=task.input or task.description, context=task_context(workflow, task)),
+                    AgentTask(
+                        description=task.input or task.description,
+                        context=task_context(workflow, task),
+                        # Propagate the authenticated workflow owner through the
+                        # agent boundary so filesystem tools select that user's
+                        # isolated workspace. Never derive this from task input.
+                        metadata={"user_id": workflow.user_id, "workflow_id": workflow.id},
+                    ),
                     cancel_event=cancel_event,
                 ),
                 timeout=task.timeout,
