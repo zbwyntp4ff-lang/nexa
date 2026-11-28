@@ -66,9 +66,9 @@ services:
       - key: AGENT_MAX_PARALLEL_PER_USER
         value: "2"
       - key: API_RATE_LIMIT_PER_MINUTE
-        value: "60"
+        value: "150"
       - key: REGISTER_RATE_LIMIT_PER_HOUR
-        value: "20"
+        value: "150"
       - key: FREE_TIER_MODE
         value: "false"
       - key: IMAGE_PROVIDER

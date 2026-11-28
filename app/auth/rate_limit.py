@@ -44,8 +44,8 @@ class SlidingWindowRateLimiter:
 # 20 password attempts per IP per minute; 10 per account key.
 login_ip_limiter = SlidingWindowRateLimiter(max_calls=20, window_seconds=60.0)
 login_account_limiter = SlidingWindowRateLimiter(max_calls=10, window_seconds=60.0)
-# Automated signup abuse: 10 registrations per IP per hour.
-register_ip_limiter = SlidingWindowRateLimiter(max_calls=10, window_seconds=3600.0)
+# Allow a 100-user launch burst from a shared NAT while retaining an hourly abuse guard.
+register_ip_limiter = SlidingWindowRateLimiter(max_calls=150, window_seconds=3600.0)
 
 
 def reset_auth_rate_limiters() -> None:

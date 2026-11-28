@@ -21,3 +21,23 @@ Full component map: [`docs/STORAGE_MATRIX.md`](STORAGE_MATRIX.md).
 A second auth SQL system was intentionally not added; migrating auth to SQL is
 optional future work if you need multi-instance shared auth without sticky
 volumes.
+
+
+## Registration burst capacity
+
+The API accepts a launch burst of up to 100 registrations from one shared IP:
+`REGISTER_RATE_LIMIT_PER_HOUR` defaults to `150` to allow for retries while
+preserving an hourly anti-abuse limit. Deployment examples also set `API_RATE_LIMIT_PER_MINUTE=150`; the global
+API middleware otherwise could reject a shared-IP burst before the registration
+route's own limit is reached.  The registration route runs password
+hashing and file persistence in Starlette's worker thread pool so CPU/disk work
+does not block the ASGI event loop.
+
+The current JSON auth store is designed for **one API process/container with a
+persistent volume**. Its lock is process-local; do not scale this deployment
+to multiple Uvicorn workers or multiple API replicas and expect cross-process
+uniqueness guarantees. Multi-instance signup requires moving auth users,
+sessions, verification records, and uniqueness constraints into shared
+transactional SQL storage (PostgreSQL recommended). The 100-request regression
+test validates concurrent requests against one API process; it is not a
+production load test and does not prove capacity under arbitrary hardware.

@@ -1,7 +1,10 @@
 """Authentication HTTP API — register, verify, login, session."""
 from __future__ import annotations
 
+import asyncio
 import json
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from typing import Annotated, Literal
 from urllib.parse import quote, urlparse
 
@@ -44,6 +47,25 @@ from app.models.auth_api import (
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 _bearer = HTTPBearer(auto_error=False)
+
+# Configure the process-local signup guard once at startup. A 150/hour default
+# permits a 100-user launch burst behind a shared NAT without disabling abuse control.
+from app.auth.rate_limit import register_ip_limiter as _register_ip_limiter
+_register_ip_limiter.configure(
+    max_calls=max(1, get_settings().register_rate_limit_per_hour),
+    window_seconds=3600.0,
+)
+
+# scrypt uses noticeable RAM per password hash. Bound auth work independently
+# of the general ASGI thread pool so a 100-request burst cannot spawn 40+
+# simultaneous memory-hard hashes on a small container.
+_AUTH_WORKER_POOL = ThreadPoolExecutor(max_workers=8, thread_name_prefix="nexa-auth")
+
+
+async def _run_auth_work(func, **kwargs):
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_AUTH_WORKER_POOL, partial(func, **kwargs))
+
 
 
 def _cookie_name() -> str:
@@ -102,11 +124,12 @@ async def register(
     response: Response,
     auth: Annotated[AuthService, Depends(get_auth_service)],
 ) -> RegisterResponse:
-    from app.auth.rate_limit import register_ip_limiter
-
     ip = request.client.host if request.client else "unknown"
-    register_ip_limiter.check(f"reg:{ip}")
-    result = auth.register(
+    _register_ip_limiter.check(f"reg:{ip}")
+    # Password hashing (scrypt) and JSON persistence are blocking operations.
+    # Keep them off the event loop so simultaneous signups do not stall all API traffic.
+    result = await _run_auth_work(
+        auth.register,
         first_name=body.first_name,
         last_name=body.last_name,
         username=body.username,
@@ -119,7 +142,8 @@ async def register(
     )
     # Single-user owner setup: activate session immediately (no email code).
     if result.get("ready"):
-        login = auth.login(
+        login = await _run_auth_work(
+            auth.login,
             email=body.email,
             password=body.password,
             user_agent=request.headers.get("user-agent"),

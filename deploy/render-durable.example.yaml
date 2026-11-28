@@ -53,9 +53,9 @@ services:
       - key: OPENAI_MODEL
         value: gpt-4o-mini
       - key: API_RATE_LIMIT_PER_MINUTE
-        value: "120"
+        value: "150"
       - key: REGISTER_RATE_LIMIT_PER_HOUR
-        value: "10"
+        value: "150"
       - key: OPENAI_API_KEY
         sync: false
       - key: AUTH_OWNER_EMAILS
