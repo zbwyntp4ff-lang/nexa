@@ -286,3 +286,47 @@ async def test_agent_creates_presentation_end_to_end(tmp_path):
     step = next(s for s in result.steps if s.tool_name == "create_presentation")
     file_id = step.output["file_id"]
     assert store.absolute_path(file_id) is not None
+
+
+def test_result_store_saves_many_files_concurrently_without_losing_manifest_entries(tmp_path: Path):
+    import json
+    from concurrent.futures import ThreadPoolExecutor
+
+    store = ResultStore(tmp_path)
+
+    def save(index: int):
+        return store.save_bytes(
+            f"payload-{index}".encode(),
+            filename=f"result-{index}",
+            media_type="text/plain",
+            extension="txt",
+            task_id=f"task-{index}",
+            user_id=f"user-{index}",
+        )
+
+    with ThreadPoolExecutor(max_workers=32) as pool:
+        records = list(pool.map(save, range(100)))
+
+    assert len({record.file_id for record in records}) == 100
+    manifest = json.loads((tmp_path / "results" / "manifest.json").read_text(encoding="utf-8"))
+    assert len(manifest) == 100
+    assert all(store.absolute_path(record.file_id).is_file() for record in records)
+
+
+def test_result_store_returns_detached_metadata_records(tmp_path: Path):
+    store = ResultStore(tmp_path)
+    saved = store.save_bytes(
+        b"private result",
+        filename="private",
+        media_type="text/plain",
+        extension="txt",
+        task_id="task-private",
+        user_id="owner-a",
+    )
+
+    saved.user_id = "owner-b"
+    loaded = store.get(saved.file_id, user_id="owner-a")
+
+    assert loaded is not None
+    assert loaded.user_id == "owner-a"
+    assert store.get(saved.file_id, user_id="owner-b") is None
