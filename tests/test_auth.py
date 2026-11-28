@@ -626,3 +626,43 @@ def test_auth_store_email_repair_preserves_sessions_and_pending_devices(tmp_path
     assert store.get_session("session-1") is not None
     assert store.get_device("pending-device") is not None
 
+
+
+def test_auth_store_atomically_rejects_duplicate_email_and_username(tmp_path: Path):
+    from app.auth.models import UserRecord, utcnow
+    from app.auth.passwords import hash_password
+
+    store = AuthStore(tmp_path / "auth.json")
+    now = utcnow()
+
+    def user(user_id: str, email: str, username: str) -> UserRecord:
+        return UserRecord(
+            id=user_id, first_name="Test", last_name="User", username=username,
+            email=email, password_hash=hash_password("Secret123"),
+            email_verified=True, is_active=True, created_at=now, updated_at=now,
+        )
+
+    assert store.create_user_if_available(user("u1", "same@example.test", "first")) is None
+    assert store.create_user_if_available(user("u2", "same@example.test", "second")) == "email"
+    assert store.create_user_if_available(user("u3", "other@example.test", "first")) == "username"
+    assert [u.id for u in store.list_users()] == ["u1"]
+
+
+def test_auth_store_enforces_single_user_inside_atomic_insert(tmp_path: Path):
+    from app.auth.models import UserRecord, utcnow
+    from app.auth.passwords import hash_password
+
+    store = AuthStore(tmp_path / "auth.json")
+    now = utcnow()
+
+    def user(user_id: str) -> UserRecord:
+        return UserRecord(
+            id=user_id, first_name="Test", last_name="User",
+            username=f"user_{user_id}", email=f"{user_id}@example.test",
+            password_hash=hash_password("Secret123"), email_verified=True,
+            is_active=True, created_at=now, updated_at=now,
+        )
+
+    assert store.create_user_if_available(user("u1"), single_user=True) is None
+    assert store.create_user_if_available(user("u2"), single_user=True) == "registration_closed"
+    assert [u.id for u in store.list_users()] == ["u1"]

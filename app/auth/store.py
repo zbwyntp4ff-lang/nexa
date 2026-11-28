@@ -121,6 +121,29 @@ class AuthStore:
             raise
 
     # --- users ------------------------------------------------------------
+    def create_user_if_available(
+        self, user: UserRecord, *, single_user: bool = False
+    ) -> str | None:
+        """Atomically reserve a unique email/username and persist a new user.
+
+        Returns email, username, or registration_closed on conflict; returns
+        None after a successful insert. Check and insert share one lock.
+        """
+        with self._lock:
+            if user.email.lower() in self._by_email:
+                return "email"
+            if user.username.lower() in self._by_username:
+                return "username"
+            if single_user and self._users:
+                return "registration_closed"
+            self._users[user.id] = user
+            self._by_email[user.email.lower()] = user.id
+            self._by_username[user.username.lower()] = user.id
+            if user.oauth_provider and user.oauth_subject:
+                self._by_oauth[f"{user.oauth_provider}:{user.oauth_subject}"] = user.id
+            self._flush()
+            return None
+
     def save_user(self, user: UserRecord) -> UserRecord:
         with self._lock:
             self._users[user.id] = user
