@@ -74,11 +74,17 @@ class LocalVectorStore(VectorStore):
             return
         try:
             raw = json.loads(self._path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return
-        for entry in raw.get("chunks", []):
-            chunk = KnowledgeChunk.model_validate(entry)
-            self._chunks[chunk.id] = chunk
+            if not isinstance(raw, dict) or not isinstance(raw.get("chunks"), list):
+                raise ValueError("vector store must contain a 'chunks' list")
+            loaded: dict[str, KnowledgeChunk] = {}
+            for entry in raw["chunks"]:
+                chunk = KnowledgeChunk.model_validate(entry)
+                loaded[chunk.id] = chunk
+        except Exception as exc:  # noqa: BLE001 - never replace a corrupt index with empty state
+            raise RuntimeError(
+                f"Cannot load NEXA knowledge vector store at {self._path}: {exc}"
+            ) from exc
+        self._chunks = loaded
     def _flush(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"chunks": [chunk.model_dump(mode="json") for chunk in self._chunks.values()]}
