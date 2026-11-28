@@ -700,3 +700,75 @@ def test_one_hundred_distinct_users_can_register_concurrently(auth_env):
     assert len(service._store.list_users()) == 100
     assert len({user.email for user in service._store.list_users()}) == 100
     assert len({user.username for user in service._store.list_users()}) == 100
+
+
+def test_auth_store_user_updates_remove_stale_identity_indexes(tmp_path: Path):
+    from app.auth.models import UserRecord
+
+    store = AuthStore(tmp_path / "auth.json")
+    user = UserRecord(
+        id="index-user", first_name="Test", last_name="User",
+        username="old_name", email="old@example.test", password_hash="unused",
+    )
+    store.save_user(user)
+
+    user.username = "new_name"
+    user.email = "new@example.test"
+    store.save_user(user)
+
+    assert store.get_user_by_email("old@example.test") is None
+    assert store.get_user_by_username("old_name") is None
+    assert store.get_user_by_email("new@example.test").id == user.id
+    assert store.get_user_by_username("new_name").id == user.id
+
+
+def test_auth_store_user_update_cannot_steal_another_identity(tmp_path: Path):
+    from app.auth.models import UserRecord
+
+    store = AuthStore(tmp_path / "auth.json")
+    first = UserRecord(
+        id="first", first_name="First", last_name="User",
+        username="first_user", email="first@example.test", password_hash="unused",
+    )
+    second = UserRecord(
+        id="second", first_name="Second", last_name="User",
+        username="second_user", email="second@example.test", password_hash="unused",
+    )
+    store.save_user(first)
+    store.save_user(second)
+
+    second.email = first.email
+    with pytest.raises(ValueError, match="email is already assigned"):
+        store.save_user(second)
+
+    assert store.get_user_by_email("first@example.test").id == "first"
+    assert store.get_user_by_email("second@example.test").id == "second"
+
+
+def test_concurrent_first_owner_bootstrap_promotes_exactly_one_user(auth_env):
+    from concurrent.futures import ThreadPoolExecutor
+    from app.auth.models import UserRecord
+
+    _, _, service = auth_env
+    store = service._store
+    users = [
+        UserRecord(
+            id=f"owner-candidate-{index}",
+            first_name="Candidate",
+            last_name="User",
+            username=f"owner_candidate_{index}",
+            email=f"owner{index}@nexa.test",
+            password_hash="unused",
+            email_verified=True,
+            is_active=True,
+        )
+        for index in range(100)
+    ]
+    for user in users:
+        store.save_user(user)
+
+    with ThreadPoolExecutor(max_workers=100) as pool:
+        list(pool.map(service._maybe_bootstrap_owner, users))
+
+    owners = [user for user in store.list_users() if user.is_owner]
+    assert len(owners) == 1
