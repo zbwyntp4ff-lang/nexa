@@ -92,7 +92,8 @@ class LocalVectorStore(VectorStore):
     def add_chunks(self, chunks: list[KnowledgeChunk]) -> None:
         with self._lock:
             for chunk in chunks:
-                self._chunks[chunk.id] = chunk
+                stored = chunk.model_copy(deep=True)
+                self._chunks[stored.id] = stored
             self._flush()
     def search(
         self,
@@ -106,7 +107,7 @@ class LocalVectorStore(VectorStore):
         with self._lock:
             candidates = list(self._chunks.values())
         scored = [
-            (chunk, cosine_similarity(query_vector, chunk.embedding))
+            (chunk.model_copy(deep=True), cosine_similarity(query_vector, chunk.embedding))
             for chunk in candidates
             if _visible(chunk, project_id, conversation_id, user_id)
         ]
