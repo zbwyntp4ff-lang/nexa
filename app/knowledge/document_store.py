@@ -36,12 +36,14 @@ class DocumentStore:
         self._path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     def save(self, document: KnowledgeDocument) -> KnowledgeDocument:
         with self._lock:
-            self._documents[document.id] = document
+            stored = document.model_copy(deep=True)
+            self._documents[stored.id] = stored
             self._flush()
-        return document
+            return stored.model_copy(deep=True)
     def get(self, document_id: str) -> KnowledgeDocument | None:
         with self._lock:
-            return self._documents.get(document_id)
+            document = self._documents.get(document_id)
+            return document.model_copy(deep=True) if document is not None else None
     def find_by_hash(
         self,
         doc_hash: str,
@@ -58,13 +60,13 @@ class DocumentStore:
                     and doc.user_id == user_id
                     and doc.status != "error"
                 ):
-                    return doc
+                    return doc.model_copy(deep=True)
         return None
     def list(
         self, project_id: str | None = None, user_id: str | None = None
     ) -> list[KnowledgeDocument]:
         with self._lock:
-            docs = list(self._documents.values())
+            docs = [doc.model_copy(deep=True) for doc in self._documents.values()]
         if user_id is not None:
             docs = [d for d in docs if d.user_id == user_id]
         if project_id is not None:
