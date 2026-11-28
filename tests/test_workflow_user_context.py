@@ -62,3 +62,33 @@ async def test_workflow_agent_does_not_invent_owner_for_anonymous_workflow(monke
     await WorkflowExecutor(registry=object())._run_agent(workflow, task, None)
 
     assert captured["task"].metadata["user_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_workflow_knowledge_search_is_scoped_to_authenticated_owner():
+    captured = {}
+
+    class FakeKnowledgeBase:
+        def search(self, query, **kwargs):
+            captured["query"] = query
+            captured["kwargs"] = kwargs
+            return SimpleNamespace(chunks=[])
+
+    workflow = Workflow(
+        user_id="authenticated-user-456",
+        name="Private knowledge lookup",
+        description="Search private notes",
+        goal="Find a private note",
+    )
+    task = WorkflowTask(
+        name="Search notes",
+        description="Search notes",
+        agent="research",
+        tool="knowledge_base",
+    )
+
+    WorkflowExecutor(registry=object(), knowledge_base=FakeKnowledgeBase())._search_knowledge(
+        workflow, task
+    )
+
+    assert captured["kwargs"]["user_id"] == "authenticated-user-456"
