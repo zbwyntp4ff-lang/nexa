@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import threading
 import time
-from collections import defaultdict, deque
+from collections import deque
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -11,11 +11,32 @@ from starlette.responses import JSONResponse, Response
 
 
 class SlidingWindow:
-    def __init__(self, *, max_calls: int, window_seconds: float) -> None:
+    def __init__(
+        self,
+        *,
+        max_calls: int,
+        window_seconds: float,
+        max_keys: int = 10_000,
+        prune_interval_seconds: float = 30.0,
+    ) -> None:
         self._max = max_calls
         self._window = window_seconds
-        self._hits: dict[str, deque[float]] = defaultdict(deque)
+        self._max_keys = max(1, max_keys)
+        self._prune_interval = max(0.0, prune_interval_seconds)
+        self._last_prune = 0.0
+        self._hits: dict[str, deque[float]] = {}
         self._lock = threading.Lock()
+
+    def _prune_expired(self, now: float) -> None:
+        """Drop inactive keys so one-off clients cannot grow state forever."""
+        expired = [
+            key
+            for key, timestamps in self._hits.items()
+            if not timestamps or (now - timestamps[-1]) > self._window
+        ]
+        for key in expired:
+            del self._hits[key]
+        self._last_prune = now
 
     def allow(self, key: str, *, max_calls: int | None = None) -> bool:
         limit = self._max if max_calls is None else max_calls
@@ -23,7 +44,23 @@ class SlidingWindow:
             return True
         now = time.monotonic()
         with self._lock:
-            q = self._hits[key]
+            q = self._hits.get(key)
+            should_prune = (now - self._last_prune) >= self._prune_interval
+            # A full table forces cleanup before considering a new key, even
+            # when the periodic sweep interval has not elapsed.
+            if should_prune or (q is None and len(self._hits) >= self._max_keys):
+                self._prune_expired(now)
+                q = self._hits.get(key)
+
+            # Bound memory under high-cardinality client-address traffic.
+            # Existing clients continue to be rate-limited; new keys fail
+            # closed until expired entries are reclaimed.
+            if q is None:
+                if len(self._hits) >= self._max_keys:
+                    return False
+                q = deque()
+                self._hits[key] = q
+
             while q and (now - q[0]) > self._window:
                 q.popleft()
             if len(q) >= limit:
@@ -34,6 +71,7 @@ class SlidingWindow:
     def clear(self) -> None:
         with self._lock:
             self._hits.clear()
+            self._last_prune = 0.0
 
 
 # Shared limiter so tests can reset hits without rebuilding the ASGI stack.
