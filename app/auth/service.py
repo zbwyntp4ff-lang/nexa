@@ -259,13 +259,6 @@ class AuthService:
         if not (accept_terms and accept_privacy and accept_license):
             raise ConsentRequiredError()
 
-        if self._store.get_user_by_email(email):
-            raise EmailAlreadyRegisteredError()
-        if self._store.get_user_by_username(username):
-            raise UsernameTakenError()
-        if self._single_user and self._store.list_users():
-            raise RegistrationClosedError()
-
         now = utcnow()
         consents: list[UserConsent] = []
         accepted_flags: dict[ConsentDocument, bool] = {
@@ -295,7 +288,23 @@ class AuthService:
             created_at=now,
             updated_at=now,
         )
-        self._store.save_user(user)
+        create_user = getattr(self._store, "create_user_if_available", None)
+        if callable(create_user):
+            conflict = create_user(user, single_user=self._single_user)
+            if conflict == "email":
+                raise EmailAlreadyRegisteredError()
+            if conflict == "username":
+                raise UsernameTakenError()
+            if conflict == "registration_closed":
+                raise RegistrationClosedError()
+        else:
+            if self._store.get_user_by_email(email):
+                raise EmailAlreadyRegisteredError()
+            if self._store.get_user_by_username(username):
+                raise UsernameTakenError()
+            if self._single_user and self._store.list_users():
+                raise RegistrationClosedError()
+            self._store.save_user(user)
         if auto_verify:
             user = self._maybe_bootstrap_owner(user)
             return {
