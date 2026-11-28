@@ -41,7 +41,7 @@ class WorkflowExecutor:
             lines.append(f"- {source}: {text[:400]}")
         if not result.chunks:
             lines.append("No matching notes.")
-        output = "\\n".join(lines)
+        output = "\n".join(lines)
         return TaskOutcome(output=output, tool="knowledge_base", tool_calls=1, tokens=len(output), sources=sources)
     async def _run_agent(
         self, workflow: Workflow, task: WorkflowTask, cancel_event: asyncio.Event | None
