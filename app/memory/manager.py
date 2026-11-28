@@ -100,7 +100,7 @@ class MemoryManager:
         from datetime import datetime, timezone
 
         item = self.get(item_id)
-        if user_id is not None and item.user_id not in (None, user_id):
+        if user_id is not None and item.user_id != user_id:
             raise MemoryItemNotFoundError(item_id)
         new_content = content if content is not None else item.content
         new_meta = metadata if metadata is not None else item.metadata
