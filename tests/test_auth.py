@@ -666,3 +666,37 @@ def test_auth_store_enforces_single_user_inside_atomic_insert(tmp_path: Path):
     assert store.create_user_if_available(user("u1"), single_user=True) is None
     assert store.create_user_if_available(user("u2"), single_user=True) == "registration_closed"
     assert [u.id for u in store.list_users()] == ["u1"]
+
+
+def test_one_hundred_distinct_users_can_register_concurrently(auth_env):
+    """A shared-IP launch burst must not serialize the event loop or hit the old 10/hour cap."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    client, _, service = auth_env
+
+    def register(index: int):
+        return client.post(
+            "/api/v1/auth/register",
+            json={
+                "first_name": "Load",
+                "last_name": "Test",
+                "username": f"loaduser{index}",
+                "email": f"loaduser{index}@nexa.test",
+                "password": "Secret123",
+                "confirm_password": "Secret123",
+                "accept_terms": True,
+                "accept_privacy": True,
+                "accept_license": True,
+            },
+        )
+
+    with ThreadPoolExecutor(max_workers=100) as pool:
+        responses = list(pool.map(register, range(100)))
+
+    assert all(response.status_code == 201 for response in responses), [
+        (response.status_code, response.text) for response in responses
+        if response.status_code != 201
+    ]
+    assert len(service._store.list_users()) == 100
+    assert len({user.email for user in service._store.list_users()}) == 100
+    assert len({user.username for user in service._store.list_users()}) == 100

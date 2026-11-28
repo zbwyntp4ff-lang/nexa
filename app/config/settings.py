@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     )
     # Registration abuse guard (IP).
     register_rate_limit_per_hour: int = Field(
-        default=10, alias="REGISTER_RATE_LIMIT_PER_HOUR"
+        default=150, alias="REGISTER_RATE_LIMIT_PER_HOUR"
     )
     # --- Provider selection ---------------------------------------------
     ai_provider: str = Field(default="mock", alias="AI_PROVIDER")

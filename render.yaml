@@ -65,7 +65,7 @@ services:
       - key: FREE_TIER_DAILY_CHAT_CAP
         value: "30"
       - key: API_RATE_LIMIT_PER_MINUTE
-        value: "60"
+        value: "150"
       - key: MEMORY_STORE_PATH
         value: data/memory_store.json
       - key: AUTH_STORE_PATH
