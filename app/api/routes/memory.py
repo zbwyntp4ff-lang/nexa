@@ -99,7 +99,7 @@ async def create_memory(
 
 def _owned_or_404(manager: MemoryManager, item_id: str, user: UserRecord | None):
     item = manager.get(item_id)
-    if user is not None and item.user_id not in (None, user.id):
+    if user is not None and item.user_id != user.id:
         from app.models.errors import MemoryItemNotFoundError
 
         raise MemoryItemNotFoundError(item_id)
