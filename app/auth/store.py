@@ -145,14 +145,60 @@ class AuthStore:
             return None
 
     def save_user(self, user: UserRecord) -> UserRecord:
+        """Persist a user without stealing another account's identity indexes."""
         with self._lock:
+            email_key = user.email.lower()
+            username_key = user.username.lower()
+            oauth_key = (
+                f"{user.oauth_provider}:{user.oauth_subject}"
+                if user.oauth_provider and user.oauth_subject
+                else None
+            )
+            for key, index, label in (
+                (email_key, self._by_email, "email"),
+                (username_key, self._by_username, "username"),
+                (oauth_key, self._by_oauth, "OAuth identity"),
+            ):
+                if key is not None:
+                    owner_id = index.get(key)
+                    if owner_id is not None and owner_id != user.id:
+                        raise ValueError(f"User {label} is already assigned to another account.")
+
+            # Callers often mutate a UserRecord before save_user; the object
+            # already stored in _users may therefore contain the new values.
+            # Remove stale index entries by owner ID rather than reading that
+            # possibly-mutated object as the previous version.
+            for key, owner_id in list(self._by_email.items()):
+                if owner_id == user.id and key != email_key:
+                    self._by_email.pop(key, None)
+            for key, owner_id in list(self._by_username.items()):
+                if owner_id == user.id and key != username_key:
+                    self._by_username.pop(key, None)
+            for key, owner_id in list(self._by_oauth.items()):
+                if owner_id == user.id and key != oauth_key:
+                    self._by_oauth.pop(key, None)
+
             self._users[user.id] = user
-            self._by_email[user.email.lower()] = user.id
-            self._by_username[user.username.lower()] = user.id
-            if user.oauth_provider and user.oauth_subject:
-                self._by_oauth[f"{user.oauth_provider}:{user.oauth_subject}"] = user.id
+            self._by_email[email_key] = user.id
+            self._by_username[username_key] = user.id
+            if oauth_key:
+                self._by_oauth[oauth_key] = user.id
             self._flush()
         return user
+
+    def claim_first_owner(self, user_id: str) -> UserRecord | None:
+        """Atomically grant bootstrap ownership to exactly one account."""
+        with self._lock:
+            user = self._users.get(user_id)
+            if user is None or any(item.is_owner for item in self._users.values()):
+                return None
+            from app.auth.models import utcnow
+
+            user.is_owner = True
+            user.updated_at = utcnow()
+            self._users[user_id] = user
+            self._flush()
+            return user
 
     def delete_user(self, user_id: str) -> bool:
         """Remove the user and related auth artifacts (sessions already revoked separately)."""

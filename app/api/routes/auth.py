@@ -206,7 +206,9 @@ async def login(
     client_ip = request.client.host if request.client else "unknown"
     login_ip_limiter.check(f"login:ip:{client_ip}")
     login_account_limiter.check(f"login:account:{body.email.strip().lower()}")
-    result = auth.login(
+    # Password verification uses memory-hard scrypt; keep it off the ASGI event loop.
+    result = await _run_auth_work(
+        auth.login,
         email=body.email,
         password=body.password,
         user_agent=request.headers.get("user-agent"),

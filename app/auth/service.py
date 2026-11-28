@@ -226,6 +226,12 @@ class AuthService:
             return user
         if user.is_owner:
             return user
+        claim_owner = getattr(self._store, "claim_first_owner", None)
+        if callable(claim_owner):
+            # The existence check and promotion must be one store transaction;
+            # otherwise simultaneous first verifications can create many owners.
+            claimed = claim_owner(user.id)
+            return claimed or self._store.get_user(user.id) or user
         if self._store.has_owner():
             return user
         user.is_owner = True
