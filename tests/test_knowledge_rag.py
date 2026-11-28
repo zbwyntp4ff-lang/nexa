@@ -115,3 +115,35 @@ async def test_knowledge_vector_store_detaches_input_and_search_results(kb):
     assert len(again) == 1
     assert again[0][0].user_id == "owner-a"
     assert kb._vectors.search([1.0, 0.0], top_k=5, user_id="attacker") == []
+
+
+def test_account_wipe_removes_orphaned_knowledge_vectors(kb):
+    from app.knowledge.models import KnowledgeChunk, KnowledgeDocument, KnowledgeSourceType
+
+    doc = KnowledgeDocument(
+        filename="owned note",
+        source_type=KnowledgeSourceType.NOTE,
+        source="owned note",
+        format="note",
+        size_bytes=4,
+        user_id="wipe-owner",
+    )
+    kb._documents.save(doc)
+    kb._vectors.add_chunks([
+        KnowledgeChunk(
+            document_id=doc.id,
+            text="owned indexed text",
+            embedding=[1.0, 0.0],
+            user_id="wipe-owner",
+        ),
+        KnowledgeChunk(
+            document_id="orphaned-document-id",
+            text="orphaned indexed text",
+            embedding=[0.0, 1.0],
+            user_id="wipe-owner",
+        ),
+    ])
+
+    assert kb.delete_user_data("wipe-owner") == 1
+    assert kb._documents.list(user_id="wipe-owner") == []
+    assert kb._vectors.search([1.0, 0.0], top_k=10, user_id="wipe-owner") == []
