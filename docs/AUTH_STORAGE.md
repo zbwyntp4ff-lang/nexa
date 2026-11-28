@@ -29,7 +29,8 @@ The API accepts a launch burst of up to 100 registrations from one shared IP:
 `REGISTER_RATE_LIMIT_PER_HOUR` defaults to `150` to allow for retries while
 preserving an hourly anti-abuse limit. Deployment examples also set `API_RATE_LIMIT_PER_MINUTE=150`; the global
 API middleware otherwise could reject a shared-IP burst before the registration
-route's own limit is reached.  The registration route runs password
+route's own limit is reached. Login IP throttling is 150/minute, while the per-account login
+limit remains 10/minute.  The registration route runs password
 hashing and file persistence in Starlette's worker thread pool so CPU/disk work
 does not block the ASGI event loop.
 

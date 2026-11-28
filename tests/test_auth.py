@@ -772,3 +772,82 @@ def test_concurrent_first_owner_bootstrap_promotes_exactly_one_user(auth_env):
 
     owners = [user for user in store.list_users() if user.is_owner]
     assert len(owners) == 1
+
+
+def test_verification_code_can_only_be_consumed_once_under_concurrency(auth_env):
+    from concurrent.futures import ThreadPoolExecutor
+    from app.auth.errors import InvalidVerificationCodeError
+
+    client, mail, service = auth_env
+    _register(client, email="single-use@nexa.test", username="single_use")
+    code = mail.last_code()
+    record = service._store.list_verifications_for_user(
+        service._store.get_user_by_email("single-use@nexa.test").id,
+        purpose="email_verification",
+    )[0]
+
+    def consume():
+        try:
+            service._consume_code(record, code)
+            return "ok"
+        except InvalidVerificationCodeError:
+            return "invalid"
+
+    with ThreadPoolExecutor(max_workers=32) as pool:
+        outcomes = list(pool.map(lambda _: consume(), range(32)))
+
+    assert outcomes.count("ok") == 1
+    assert outcomes.count("invalid") == 31
+
+
+def test_auth_store_fails_closed_on_duplicate_normalized_emails(tmp_path: Path):
+    import json
+    from app.auth.models import UserRecord
+
+    users = [
+        UserRecord(
+            id=f"duplicate-{index}", first_name="Test", last_name="User",
+            username=f"duplicate_user_{index}",
+            email=email, password_hash="unused",
+        ).model_dump(mode="json")
+        for index, email in enumerate(("same@example.test", "SAME@example.test"))
+    ]
+    path = tmp_path / "auth.json"
+    path.write_text(json.dumps({"users": users}), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="duplicate normalized email"):
+        AuthStore(path)
+
+
+def test_auth_rate_limiter_bounds_distinct_client_keys(monkeypatch):
+    from app.auth.rate_limit import AuthRateLimitedError, SlidingWindowRateLimiter
+    import app.auth.rate_limit as auth_rate_limit
+
+    now = [100.0]
+    monkeypatch.setattr(auth_rate_limit.time, "monotonic", lambda: now[0])
+    limiter = SlidingWindowRateLimiter(
+        max_calls=5, window_seconds=60.0, max_keys=2, prune_interval_seconds=999.0
+    )
+    limiter.check("ip-a")
+    limiter.check("ip-b")
+
+    with pytest.raises(AuthRateLimitedError):
+        limiter.check("ip-c")
+
+    assert len(limiter._hits) == 2
+
+
+def test_auth_rate_limiter_reclaims_expired_keys_when_capacity_is_full(monkeypatch):
+    from app.auth.rate_limit import SlidingWindowRateLimiter
+    import app.auth.rate_limit as auth_rate_limit
+
+    now = [100.0]
+    monkeypatch.setattr(auth_rate_limit.time, "monotonic", lambda: now[0])
+    limiter = SlidingWindowRateLimiter(
+        max_calls=5, window_seconds=10.0, max_keys=1, prune_interval_seconds=999.0
+    )
+    limiter.check("old-ip")
+    now[0] = 111.0
+    limiter.check("new-ip")
+
+    assert list(limiter._hits) == ["new-ip"]

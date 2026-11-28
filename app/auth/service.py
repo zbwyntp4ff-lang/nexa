@@ -965,6 +965,18 @@ class AuthService:
 
     def _consume_code(self, record: EmailVerificationRecord, code: str) -> None:
         now = utcnow()
+        consume = getattr(self._store, "consume_verification_attempt", None)
+        if callable(consume):
+            outcome = consume(record.id, hash_code(code), now=now)
+            if outcome == "ok":
+                return
+            if outcome == "expired":
+                raise VerificationCodeExpiredError()
+            if outcome == "attempts_exceeded":
+                raise VerificationAttemptsExceededError()
+            raise InvalidVerificationCodeError()
+
+        # Compatibility path for alternative auth-store implementations.
         if record.used_at is not None:
             raise InvalidVerificationCodeError()
         if record.expires_at <= now:

@@ -1,6 +1,7 @@
 """JSON-file persistence for auth entities (matches LocalMemoryStore style)."""
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import tempfile
@@ -60,11 +61,24 @@ class AuthStore:
             if cleaned and cleaned != user.email:
                 user.email = cleaned
                 dirty = True
+            email_key = user.email.lower()
+            username_key = user.username.lower()
+            oauth_key = (
+                f"{user.oauth_provider}:{user.oauth_subject}"
+                if user.oauth_provider and user.oauth_subject
+                else None
+            )
+            if email_key in self._by_email and self._by_email[email_key] != user.id:
+                raise RuntimeError("Auth store contains duplicate normalized email identities.")
+            if username_key in self._by_username and self._by_username[username_key] != user.id:
+                raise RuntimeError("Auth store contains duplicate normalized usernames.")
+            if oauth_key and oauth_key in self._by_oauth and self._by_oauth[oauth_key] != user.id:
+                raise RuntimeError("Auth store contains duplicate OAuth identities.")
             self._users[user.id] = user
-            self._by_email[user.email.lower()] = user.id
-            self._by_username[user.username.lower()] = user.id
-            if user.oauth_provider and user.oauth_subject:
-                self._by_oauth[f"{user.oauth_provider}:{user.oauth_subject}"] = user.id
+            self._by_email[email_key] = user.id
+            self._by_username[username_key] = user.id
+            if oauth_key:
+                self._by_oauth[oauth_key] = user.id
         for entry in raw.get("verifications", []):
             item = EmailVerificationRecord.model_validate(entry)
             self._verifications[item.id] = item
@@ -264,6 +278,40 @@ class AuthStore:
     def get_verification(self, verification_id: str) -> EmailVerificationRecord | None:
         with self._lock:
             return self._verifications.get(verification_id)
+
+    def consume_verification_attempt(
+        self, verification_id: str, supplied_code_hash: str, *, now
+    ) -> str:
+        """Atomically validate and consume a one-time email code.
+
+        A code can succeed at most once even when several requests race.
+        Invalid attempts are also counted under the same lock.
+        """
+        with self._lock:
+            record = self._verifications.get(verification_id)
+            if record is None:
+                return "missing"
+            if record.used_at is not None:
+                return "used"
+            if record.expires_at <= now:
+                return "expired"
+            if record.attempts >= record.max_attempts:
+                return "attempts_exceeded"
+
+            record.attempts += 1
+            if not hmac.compare_digest(record.code_hash, supplied_code_hash):
+                self._verifications[verification_id] = record
+                self._flush()
+                return (
+                    "attempts_exceeded"
+                    if record.attempts >= record.max_attempts
+                    else "invalid"
+                )
+
+            record.used_at = now
+            self._verifications[verification_id] = record
+            self._flush()
+            return "ok"
 
     def list_verifications_for_user(
         self, user_id: str, *, purpose: str | None = None
