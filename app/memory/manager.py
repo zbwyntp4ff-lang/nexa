@@ -76,13 +76,13 @@ class MemoryManager:
     def delete(self, item_id: str, *, user_id: str | None = None) -> bool:
         """Delete a memory item by id. Returns ``True`` if it existed.
 
-        When ``user_id`` is provided, only delete if the item belongs to that user
-        (or has no owner — legacy rows).
+        When ``user_id`` is provided, only delete records owned by that
+        exact user. Ownerless legacy records remain in the local namespace.
         """
         item = self._store.get(item_id)
         if item is None:
             return False
-        if user_id is not None and item.user_id not in (None, user_id):
+        if user_id is not None and item.user_id != user_id:
             raise MemoryItemNotFoundError(item_id)
         return self._store.delete(item_id)
 
