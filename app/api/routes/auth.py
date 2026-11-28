@@ -174,7 +174,7 @@ async def verify_email(
     body: VerifyEmailRequest,
     auth: Annotated[AuthService, Depends(get_auth_service)],
 ) -> VerifyEmailResponse:
-    result = auth.verify_email(email=body.email, code=body.code)
+    result = await _run_auth_work(auth.verify_email, email=body.email, code=body.code)
     return VerifyEmailResponse(user=UserPublic(**result["user"]))
 
 
@@ -183,7 +183,7 @@ async def resend_code(
     body: ResendCodeRequest,
     auth: Annotated[AuthService, Depends(get_auth_service)],
 ) -> ResendCodeResponse:
-    result = auth.resend_verification(email=body.email)
+    result = await _run_auth_work(auth.resend_verification, email=body.email)
     return ResendCodeResponse(
         email=body.email,
         sent=True,
@@ -297,7 +297,7 @@ async def forgot_password(
     body: ForgotPasswordRequest,
     auth: Annotated[AuthService, Depends(get_auth_service)],
 ) -> MessageResponse:
-    result = auth.request_password_reset(email=body.email)
+    result = await _run_auth_work(auth.request_password_reset, email=body.email)
     return MessageResponse(
         message="If an account exists for that email, a reset code has been sent.",
         email=body.email,
@@ -312,7 +312,8 @@ async def reset_password(
     body: ResetPasswordRequest,
     auth: Annotated[AuthService, Depends(get_auth_service)],
 ) -> MessageResponse:
-    auth.reset_password(
+    await _run_auth_work(
+        auth.reset_password,
         email=body.email,
         code=body.code,
         password=body.password,
@@ -470,7 +471,8 @@ async def device_login(
     client_ip = request.client.host if request.client else "unknown"
     login_ip_limiter.check(f"device:ip:{client_ip}")
     login_account_limiter.check(f"device:account:{body.email.strip().lower()}")
-    auth.login_and_approve_device(
+    await _run_auth_work(
+        auth.login_and_approve_device,
         email=body.email,
         password=body.password,
         user_code=body.user_code,
@@ -487,7 +489,8 @@ async def device_approve(
     user: Annotated[UserRecord, Depends(get_current_user)],
     auth: Annotated[AuthService, Depends(get_auth_service)],
 ) -> MessageResponse:
-    auth.approve_device_login(
+    await _run_auth_work(
+        auth.approve_device_login,
         user_code=body.user_code,
         user=user,
         user_agent=request.headers.get("user-agent"),
