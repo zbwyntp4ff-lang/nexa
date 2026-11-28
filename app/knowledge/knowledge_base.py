@@ -76,9 +76,12 @@ class KnowledgeBase:
         self._documents.delete(document_id)
     def delete_user_data(self, user_id: str) -> int:
         """Delete all documents and vectors owned by ``user_id``. Returns doc count."""
+        # Remove every owner-stamped chunk, including orphaned chunks whose
+        # document metadata was already lost during an interrupted prior write.
+        # Delete vectors first: if vector cleanup fails, retain document metadata
+        # so a retry can still identify the user's data.
+        self._vectors.delete_user(user_id)
         ids = self._documents.delete_user(user_id)
-        for doc_id in ids:
-            self._vectors.delete_document(doc_id)
         return len(ids)
     # --- retrieval / RAG ---------------------------------------------------------
     def search(
