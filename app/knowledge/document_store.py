@@ -19,11 +19,17 @@ class DocumentStore:
             return
         try:
             raw = json.loads(self._path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return
-        for entry in raw.get("documents", []):
-            doc = KnowledgeDocument.model_validate(entry)
-            self._documents[doc.id] = doc
+            if not isinstance(raw, dict) or not isinstance(raw.get("documents"), list):
+                raise ValueError("document store must contain a 'documents' list")
+            loaded: dict[str, KnowledgeDocument] = {}
+            for entry in raw["documents"]:
+                doc = KnowledgeDocument.model_validate(entry)
+                loaded[doc.id] = doc
+        except Exception as exc:  # noqa: BLE001 - never replace a corrupt store with empty state
+            raise RuntimeError(
+                f"Cannot load NEXA knowledge document store at {self._path}: {exc}"
+            ) from exc
+        self._documents = loaded
     def _flush(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"documents": [doc.model_dump(mode="json") for doc in self._documents.values()]}

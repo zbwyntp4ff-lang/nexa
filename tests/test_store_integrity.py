@@ -6,6 +6,8 @@ import pytest
 from app.billing.store import BillingStore
 from app.profile.store import ProfileStore
 from app.tokens.store import TokenStore
+from app.knowledge.document_store import DocumentStore
+from app.knowledge.vector_store import LocalVectorStore
 
 
 @pytest.mark.parametrize(
@@ -14,6 +16,8 @@ from app.tokens.store import TokenStore
         (TokenStore, "tokens.json", "token store"),
         (BillingStore, "billing.json", "billing store"),
         (ProfileStore, "profiles.json", "profile store"),
+        (DocumentStore, "knowledge-documents.json", "knowledge document store"),
+        (LocalVectorStore, "knowledge-vectors.json", "knowledge vector store"),
     ],
 )
 def test_corrupt_store_fails_closed_and_preserves_original_file(
