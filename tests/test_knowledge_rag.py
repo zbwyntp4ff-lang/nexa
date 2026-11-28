@@ -72,3 +72,46 @@ async def test_prompt_injection_framing(kb):
     result = kb.search("mango")
     ctx = kb.build_context_message(result)
     assert "not instructions" in ctx.lower() or "reference data" in ctx.lower()
+
+
+@pytest.mark.asyncio
+async def test_knowledge_document_store_returns_detached_records(kb):
+    from app.knowledge.models import KnowledgeDocument, KnowledgeSourceType
+
+    doc = KnowledgeDocument(
+        filename="private.txt",
+        source_type=KnowledgeSourceType.NOTE,
+        source="private",
+        format="txt",
+        size_bytes=7,
+        user_id="owner-a",
+    )
+    saved = kb._documents.save(doc)
+    saved.user_id = "attacker"
+    fetched = kb._documents.get(doc.id)
+    assert fetched.user_id == "owner-a"
+
+    listed = kb._documents.list(user_id="owner-a")
+    listed[0].user_id = "attacker"
+    assert kb._documents.get(doc.id).user_id == "owner-a"
+
+
+@pytest.mark.asyncio
+async def test_knowledge_vector_store_detaches_input_and_search_results(kb):
+    from app.knowledge.models import KnowledgeChunk
+
+    chunk = KnowledgeChunk(
+        document_id="doc-owner-a",
+        text="owner private document fragment",
+        embedding=[1.0, 0.0],
+        user_id="owner-a",
+    )
+    kb._vectors.add_chunks([chunk])
+    chunk.user_id = "attacker"
+    results = kb._vectors.search([1.0, 0.0], top_k=5, user_id="owner-a")
+    assert len(results) == 1
+    results[0][0].user_id = "attacker"
+    again = kb._vectors.search([1.0, 0.0], top_k=5, user_id="owner-a")
+    assert len(again) == 1
+    assert again[0][0].user_id == "owner-a"
+    assert kb._vectors.search([1.0, 0.0], top_k=5, user_id="attacker") == []
