@@ -1,6 +1,7 @@
 """JSON-file persistence for auth entities (matches LocalMemoryStore style)."""
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 import os
@@ -74,7 +75,7 @@ class AuthStore:
                 raise RuntimeError("Auth store contains duplicate normalized usernames.")
             if oauth_key and oauth_key in self._by_oauth and self._by_oauth[oauth_key] != user.id:
                 raise RuntimeError("Auth store contains duplicate OAuth identities.")
-            self._users[user.id] = user
+            self._users[user.id] = user.model_copy(deep=True)
             self._by_email[email_key] = user.id
             self._by_username[username_key] = user.id
             if oauth_key:
@@ -150,7 +151,7 @@ class AuthStore:
                 return "username"
             if single_user and self._users:
                 return "registration_closed"
-            self._users[user.id] = user
+            self._users[user.id] = user.model_copy(deep=True)
             self._by_email[user.email.lower()] = user.id
             self._by_username[user.username.lower()] = user.id
             if user.oauth_provider and user.oauth_subject:
@@ -192,13 +193,13 @@ class AuthStore:
                 if owner_id == user.id and key != oauth_key:
                     self._by_oauth.pop(key, None)
 
-            self._users[user.id] = user
+            self._users[user.id] = user.model_copy(deep=True)
             self._by_email[email_key] = user.id
             self._by_username[username_key] = user.id
             if oauth_key:
                 self._by_oauth[oauth_key] = user.id
             self._flush()
-        return user
+        return user.model_copy(deep=True)
 
     def claim_first_owner(self, user_id: str) -> UserRecord | None:
         """Atomically grant bootstrap ownership to exactly one account."""
@@ -212,7 +213,7 @@ class AuthStore:
             user.updated_at = utcnow()
             self._users[user_id] = user
             self._flush()
-            return user
+            return user.model_copy(deep=True)
 
     def delete_user(self, user_id: str) -> bool:
         """Remove the user and related auth artifacts (sessions already revoked separately)."""
@@ -244,25 +245,29 @@ class AuthStore:
     def get_user_by_oauth(self, provider: str, subject: str) -> UserRecord | None:
         with self._lock:
             uid = self._by_oauth.get(f"{provider}:{subject}")
-            return self._users.get(uid) if uid else None
+            user = self._users.get(uid) if uid else None
+            return user.model_copy(deep=True) if user else None
 
     def get_user(self, user_id: str) -> UserRecord | None:
         with self._lock:
-            return self._users.get(user_id)
+            user = self._users.get(user_id)
+            return user.model_copy(deep=True) if user else None
 
     def get_user_by_email(self, email: str) -> UserRecord | None:
         with self._lock:
             uid = self._by_email.get(email.strip().lower())
-            return self._users.get(uid) if uid else None
+            user = self._users.get(uid) if uid else None
+            return user.model_copy(deep=True) if user else None
 
     def get_user_by_username(self, username: str) -> UserRecord | None:
         with self._lock:
             uid = self._by_username.get(username.strip().lower())
-            return self._users.get(uid) if uid else None
+            user = self._users.get(uid) if uid else None
+            return user.model_copy(deep=True) if user else None
 
     def list_users(self) -> list[UserRecord]:
         with self._lock:
-            return list(self._users.values())
+            return [user.model_copy(deep=True) for user in self._users.values()]
 
     def has_owner(self) -> bool:
         with self._lock:
@@ -271,13 +276,14 @@ class AuthStore:
     # --- verifications ----------------------------------------------------
     def save_verification(self, record: EmailVerificationRecord) -> EmailVerificationRecord:
         with self._lock:
-            self._verifications[record.id] = record
+            self._verifications[record.id] = record.model_copy(deep=True)
             self._flush()
-        return record
+        return record.model_copy(deep=True)
 
     def get_verification(self, verification_id: str) -> EmailVerificationRecord | None:
         with self._lock:
-            return self._verifications.get(verification_id)
+            record = self._verifications.get(verification_id)
+            return record.model_copy(deep=True) if record else None
 
     def consume_verification_attempt(
         self, verification_id: str, supplied_code_hash: str, *, now
@@ -317,7 +323,11 @@ class AuthStore:
         self, user_id: str, *, purpose: str | None = None
     ) -> list[EmailVerificationRecord]:
         with self._lock:
-            items = [v for v in self._verifications.values() if v.user_id == user_id]
+            items = [
+                v.model_copy(deep=True)
+                for v in self._verifications.values()
+                if v.user_id == user_id
+            ]
         if purpose:
             items = [v for v in items if v.purpose == purpose]
         return sorted(items, key=lambda v: v.created_at, reverse=True)
@@ -325,19 +335,20 @@ class AuthStore:
     # --- sessions ---------------------------------------------------------
     def save_session(self, session: SessionRecord) -> SessionRecord:
         with self._lock:
-            self._sessions[session.id] = session
+            self._sessions[session.id] = session.model_copy(deep=True)
             self._flush()
-        return session
+        return session.model_copy(deep=True)
 
     def get_session(self, session_id: str) -> SessionRecord | None:
         with self._lock:
-            return self._sessions.get(session_id)
+            session = self._sessions.get(session_id)
+            return session.model_copy(deep=True) if session else None
 
     def get_session_by_token_hash(self, token_hash: str) -> SessionRecord | None:
         with self._lock:
             for session in self._sessions.values():
                 if session.token_hash == token_hash:
-                    return session
+                    return session.model_copy(deep=True)
         return None
 
     def revoke_session(self, session_id: str) -> None:
@@ -368,28 +379,65 @@ class AuthStore:
     # --- device login -----------------------------------------------------
     def save_device(self, record: DeviceLoginRecord) -> DeviceLoginRecord:
         with self._lock:
-            self._devices[record.device_code] = record
+            self._devices[record.device_code] = record.model_copy(deep=True)
             self._flush()
-        return record
+        return record.model_copy(deep=True)
 
     def get_device(self, device_code: str) -> DeviceLoginRecord | None:
         with self._lock:
-            return self._devices.get(device_code)
+            record = self._devices.get(device_code)
+            return record.model_copy(deep=True) if record else None
 
     def get_device_by_user_code(self, user_code: str) -> DeviceLoginRecord | None:
         code = user_code.strip().upper().replace(" ", "")
         with self._lock:
             for item in self._devices.values():
                 if item.user_code.replace("-", "") == code.replace("-", ""):
-                    return item
+                    return item.model_copy(deep=True)
         return None
+
+    def consume_device_session_token(
+        self, device_code: str, *, now
+    ) -> tuple[str, DeviceLoginRecord | None, str | None]:
+        """Atomically expire or consume an approved device's one-time session token."""
+        with self._lock:
+            record = self._devices.get(device_code)
+            if record is None:
+                return "missing", None, None
+
+            if record.expires_at <= now and record.status in {"pending", "approved"}:
+                if record.session_token:
+                    token_hash = hashlib.sha256(
+                        record.session_token.encode("utf-8")
+                    ).hexdigest()
+                    for session in self._sessions.values():
+                        if session.token_hash == token_hash and session.revoked_at is None:
+                            session.revoked_at = now
+                record.session_token = None
+                record.status = "expired"
+                self._flush()
+                return "expired", record.model_copy(deep=True), None
+
+            if record.status == "pending":
+                return "pending", record.model_copy(deep=True), None
+            if record.status == "denied":
+                return "denied", record.model_copy(deep=True), None
+            if record.status == "expired":
+                return "expired", record.model_copy(deep=True), None
+            if record.status != "approved" or not record.session_token or not record.user_id:
+                return "not_ready", record.model_copy(deep=True), None
+
+            token = record.session_token
+            record.session_token = None
+            self._flush()
+            return "approved", record.model_copy(deep=True), token
 
     # --- oauth state ------------------------------------------------------
     def save_oauth_state(self, record: OAuthStateRecord) -> OAuthStateRecord:
         with self._lock:
-            self._oauth_states[record.state] = record
+            self._oauth_states[record.state] = record.model_copy(deep=True)
             self._flush()
-        return record
+        return record.model_copy(deep=True)
 
     def pop_oauth_state(self, state: str) -> OAuthStateRecord | None:
         with self._lock:
@@ -401,9 +449,9 @@ class AuthStore:
     # --- passkey challenges -----------------------------------------------
     def save_passkey_challenge(self, record: PasskeyChallengeRecord) -> PasskeyChallengeRecord:
         with self._lock:
-            self._passkey_challenges[record.challenge] = record
+            self._passkey_challenges[record.challenge] = record.model_copy(deep=True)
             self._flush()
-        return record
+        return record.model_copy(deep=True)
 
     def pop_passkey_challenge(self, challenge: str) -> PasskeyChallengeRecord | None:
         with self._lock:
@@ -417,5 +465,5 @@ class AuthStore:
             for user in self._users.values():
                 for pk in user.passkeys:
                     if pk.credential_id == credential_id:
-                        return user
+                        return user.model_copy(deep=True)
         return None
