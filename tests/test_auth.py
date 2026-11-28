@@ -851,3 +851,125 @@ def test_auth_rate_limiter_reclaims_expired_keys_when_capacity_is_full(monkeypat
     limiter.check("new-ip")
 
     assert list(limiter._hits) == ["new-ip"]
+
+
+def test_auth_store_returns_detached_user_records(tmp_path: Path):
+    from app.auth.models import UserRecord
+
+    store = AuthStore(tmp_path / "auth.json")
+    original = UserRecord(
+        id="detached-user", first_name="Original", last_name="Name",
+        username="detached_user", email="detached@example.test", password_hash="unused",
+    )
+    store.save_user(original)
+
+    original.email = "mutated-after-save@example.test"
+    loaded = store.get_user("detached-user")
+    assert loaded is not None
+    loaded.first_name = "Mutated"
+    loaded.email = "mutated-after-read@example.test"
+    listed = store.list_users()
+    listed[0].username = "mutated_list_value"
+
+    persisted = store.get_user("detached-user")
+    assert persisted is not None
+    assert persisted.first_name == "Original"
+    assert persisted.email == "detached@example.test"
+    assert persisted.username == "detached_user"
+
+
+def test_auth_store_returns_detached_verification_session_and_device_records(tmp_path: Path):
+    from datetime import timedelta
+    from app.auth.models import (
+        DeviceLoginRecord,
+        EmailVerificationRecord,
+        SessionRecord,
+        utcnow,
+    )
+
+    store = AuthStore(tmp_path / "auth.json")
+    now = utcnow()
+    expiry = now + timedelta(minutes=5)
+    verification = EmailVerificationRecord(
+        id="verify-1", user_id="user-1", email="user@example.test",
+        code_hash="hash", expires_at=expiry,
+    )
+    session = SessionRecord(
+        id="session-1", user_id="user-1", token_hash="token-hash", expires_at=expiry,
+    )
+    device = DeviceLoginRecord(
+        device_code="device-1", user_code="ABC-123", expires_at=expiry,
+    )
+    store.save_verification(verification)
+    store.save_session(session)
+    store.save_device(device)
+
+    store.get_verification("verify-1").attempts = 99
+    store.get_session("session-1").revoked_at = now
+    store.get_device("device-1").status = "denied"
+
+    assert store.get_verification("verify-1").attempts == 0
+    assert store.get_session("session-1").revoked_at is None
+    assert store.get_device("device-1").status == "pending"
+
+
+def test_device_session_token_can_only_be_polled_once_concurrently(tmp_path: Path):
+    from concurrent.futures import ThreadPoolExecutor
+    from datetime import timedelta
+    from app.auth.models import DeviceLoginRecord, SessionRecord, utcnow
+    from app.auth.service import AuthService
+    import hashlib
+
+    store = AuthStore(tmp_path / "auth.json")
+    now = utcnow()
+    raw_token = "one-time-device-session-token"
+    store.save_session(SessionRecord(
+        id="device-session", user_id="device-user",
+        token_hash=hashlib.sha256(raw_token.encode()).hexdigest(),
+        expires_at=now + timedelta(hours=1),
+    ))
+    store.save_device(DeviceLoginRecord(
+        device_code="device-code", user_code="ABC-123", status="approved",
+        user_id="device-user", session_token=raw_token,
+        expires_at=now + timedelta(minutes=5),
+    ))
+
+    def poll():
+        return store.consume_device_session_token("device-code", now=now)
+
+    with ThreadPoolExecutor(max_workers=32) as pool:
+        results = list(pool.map(lambda _: poll(), range(32)))
+
+    tokens = [token for status, _, token in results if status == "approved" and token]
+    assert tokens == [raw_token]
+    assert store.get_device("device-code").session_token is None
+
+
+def test_expired_approved_device_login_revokes_unclaimed_session(tmp_path: Path):
+    from datetime import timedelta
+    import hashlib
+    from app.auth.models import DeviceLoginRecord, SessionRecord, utcnow
+
+    store = AuthStore(tmp_path / "auth.json")
+    created = utcnow()
+    raw_token = "expired-device-session-token"
+    session = SessionRecord(
+        id="expired-device-session", user_id="device-user",
+        token_hash=hashlib.sha256(raw_token.encode()).hexdigest(),
+        expires_at=created + timedelta(hours=1),
+    )
+    store.save_session(session)
+    store.save_device(DeviceLoginRecord(
+        device_code="expired-device", user_code="XYZ-789", status="approved",
+        user_id="device-user", session_token=raw_token,
+        expires_at=created + timedelta(minutes=1),
+    ))
+
+    status, _, token = store.consume_device_session_token(
+        "expired-device", now=created + timedelta(minutes=2)
+    )
+
+    assert status == "expired"
+    assert token is None
+    assert store.get_device("expired-device").session_token is None
+    assert store.get_session("expired-device-session").revoked_at is not None

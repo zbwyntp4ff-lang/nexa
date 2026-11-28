@@ -615,27 +615,42 @@ class AuthService:
         return 8420
 
     def poll_device_login(self, device_code: str) -> dict[str, Any]:
-        record = self._store.get_device(device_code)
-        if not record:
-            raise DeviceLoginError("Unknown device code.")
-        if record.expires_at <= utcnow() and record.status == "pending":
-            record.status = "expired"
+        consume = getattr(self._store, "consume_device_session_token", None)
+        if callable(consume):
+            status, record, token = consume(device_code, now=utcnow())
+            if status == "missing" or record is None:
+                raise DeviceLoginError("Unknown device code.")
+            if status == "pending":
+                raise DeviceLoginPendingError()
+            if status == "denied":
+                raise DeviceLoginError("Device login was denied.")
+            if status == "expired":
+                raise DeviceLoginError("Device login expired.")
+            if status != "approved" or not token or not record.user_id:
+                raise DeviceLoginError("Device login is not ready.")
+        else:
+            # Compatibility path for alternative auth-store implementations.
+            record = self._store.get_device(device_code)
+            if not record:
+                raise DeviceLoginError("Unknown device code.")
+            if record.expires_at <= utcnow() and record.status == "pending":
+                record.status = "expired"
+                self._store.save_device(record)
+            if record.status == "pending":
+                raise DeviceLoginPendingError()
+            if record.status == "denied":
+                raise DeviceLoginError("Device login was denied.")
+            if record.status == "expired":
+                raise DeviceLoginError("Device login expired.")
+            if record.status != "approved" or not record.session_token or not record.user_id:
+                raise DeviceLoginError("Device login is not ready.")
+            token = record.session_token
+            record.session_token = None
             self._store.save_device(record)
-        if record.status == "pending":
-            raise DeviceLoginPendingError()
-        if record.status == "denied":
-            raise DeviceLoginError("Device login was denied.")
-        if record.status == "expired":
-            raise DeviceLoginError("Device login expired.")
-        if record.status != "approved" or not record.session_token or not record.user_id:
-            raise DeviceLoginError("Device login is not ready.")
+
         user = self._store.get_user(record.user_id)
         if not user:
             raise DeviceLoginError("User for device login is missing.")
-        # One-shot: clear token from record after poll succeeds
-        token = record.session_token
-        record.session_token = None
-        self._store.save_device(record)
         session = self._store.get_session_by_token_hash(self._token_hash(token))
         expires = session.expires_at.isoformat() if session else utcnow().isoformat()
         return {
