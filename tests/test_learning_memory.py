@@ -172,3 +172,21 @@ def test_no_silent_mock_in_learning_status_note():
     )
     assert sample.fine_tuning["available_in_product"] is False
     assert sample.fine_tuning["categories"]["parameter_update"] == "not_enabled"
+
+
+def test_authenticated_user_cannot_update_or_delete_ownerless_legacy_memory(memory: MemoryManager):
+    from app.models.errors import MemoryItemNotFoundError
+
+    legacy = memory.save("Legacy local memory", type=MemoryType.LONG_TERM)
+    with pytest.raises(MemoryItemNotFoundError):
+        memory.update(legacy.id, content="overwritten by account", user_id="alice")
+    with pytest.raises(MemoryItemNotFoundError):
+        memory.delete(legacy.id, user_id="alice")
+    assert memory.get(legacy.id).content == "Legacy local memory"
+
+
+def test_ownerless_memory_remains_manageable_in_local_namespace(memory: MemoryManager):
+    legacy = memory.save("Legacy local memory", type=MemoryType.LONG_TERM)
+    updated = memory.update(legacy.id, content="Updated locally")
+    assert updated.content == "Updated locally"
+    assert memory.delete(legacy.id) is True
