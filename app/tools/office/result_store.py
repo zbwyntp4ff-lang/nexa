@@ -1,8 +1,12 @@
 """Secure store for agent-generated binary results (never expose server paths)."""
 from __future__ import annotations
 
+import copy
 import json
+import os
 import re
+import tempfile
+import threading
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -40,6 +44,7 @@ class ResultStore:
         self._dir.mkdir(parents=True, exist_ok=True)
         self._manifest_path = self._dir / "manifest.json"
         self._index: dict[str, GeneratedFile] = {}
+        self._lock = threading.RLock()
         self._load()
 
     def _load(self) -> None:
@@ -60,10 +65,22 @@ class ResultStore:
                 continue
 
     def _save(self) -> None:
+        """Atomically persist the manifest using a unique temporary file."""
         payload = {fid: asdict(rec) for fid, rec in self._index.items()}
-        tmp = self._manifest_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(self._manifest_path)
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=".manifest-", suffix=".tmp", dir=self._dir
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, ensure_ascii=False, indent=2)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp_name, self._manifest_path)
+        finally:
+            try:
+                os.unlink(tmp_name)
+            except FileNotFoundError:
+                pass
 
     @staticmethod
     def sanitize_filename(name: str, *, default: str, extension: str) -> str:
@@ -82,15 +99,16 @@ class ResultStore:
         Does **not** enforce ownership. Callers that expose content to a user
         must use :meth:`get` with ``user_id`` first (see Results API / open_result).
         """
-        rec = self._index.get(file_id)
-        if rec is None:
-            return None
-        path = (self._dir / f"{file_id}{Path(rec.filename).suffix}").resolve()
-        try:
-            path.relative_to(self._dir.resolve())
-        except ValueError:
-            return None
-        return path if path.is_file() else None
+        with self._lock:
+            rec = self._index.get(file_id)
+            if rec is None:
+                return None
+            path = (self._dir / f"{file_id}{Path(rec.filename).suffix}").resolve()
+            try:
+                path.relative_to(self._dir.resolve())
+            except ValueError:
+                return None
+            return path if path.is_file() else None
 
     def get(self, file_id: str, *, user_id: str | None = None) -> GeneratedFile | None:
         """Return a result if the caller may access it.
@@ -99,24 +117,25 @@ class ResultStore:
         denied and ``user_id`` must match ``rec.user_id``. Local single-user
         mode still allows legacy ownerless files for desktop convenience.
         """
-        rec = self._index.get(file_id)
-        if rec is None:
-            return None
-        enforce = False
-        try:
-            from app.config.settings import get_settings
-
-            enforce = bool(get_settings().tokens_enforce)
-        except Exception:  # noqa: BLE001
-            enforce = False
-        if enforce:
-            if not user_id or not rec.user_id or rec.user_id != user_id:
+        with self._lock:
+            rec = self._index.get(file_id)
+            if rec is None:
                 return None
-        elif user_id is not None and rec.user_id and rec.user_id != user_id:
-            return None
-        if self.absolute_path(file_id) is None:
-            return None
-        return rec
+            enforce = False
+            try:
+                from app.config.settings import get_settings
+
+                enforce = bool(get_settings().tokens_enforce)
+            except Exception:  # noqa: BLE001
+                enforce = False
+            if enforce:
+                if not user_id or not rec.user_id or rec.user_id != user_id:
+                    return None
+            elif user_id is not None and rec.user_id and rec.user_id != user_id:
+                return None
+            if self.absolute_path(file_id) is None:
+                return None
+            return copy.deepcopy(rec)
 
     def save_bytes(
         self,
@@ -132,49 +151,60 @@ class ResultStore:
     ) -> GeneratedFile:
         if not data:
             raise ValueError("Generated file is empty.")
-        file_id = uuid.uuid4().hex
-        safe_name = self.sanitize_filename(filename, default="document", extension=extension)
-        target = self._dir / f"{file_id}{Path(safe_name).suffix}"
-        # Never overwrite an existing result id (uuid collision is astronomical).
-        if target.exists():
-            raise FileExistsError(f"Result path already exists: {file_id}")
-        target.write_bytes(data)
-        if not target.is_file() or target.stat().st_size <= 0:
-            raise OSError("Failed to verify written result file.")
-        rec = GeneratedFile(
-            file_id=file_id,
-            filename=safe_name,
-            media_type=media_type,
-            size_bytes=target.stat().st_size,
-            task_id=task_id,
-            created_at=datetime.now(timezone.utc).isoformat(),
-            user_id=user_id,
-            tool_name=tool_name,
-            meta=meta or {},
-        )
-        self._index[file_id] = rec
-        self._save()
-        return rec
+        with self._lock:
+            file_id = uuid.uuid4().hex
+            safe_name = self.sanitize_filename(filename, default="document", extension=extension)
+            target = self._dir / f"{file_id}{Path(safe_name).suffix}"
+            try:
+                with target.open("xb") as handle:
+                    handle.write(data)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+            except FileExistsError as exc:
+                raise FileExistsError(f"Result path already exists: {file_id}") from exc
+            if not target.is_file() or target.stat().st_size <= 0:
+                target.unlink(missing_ok=True)
+                raise OSError("Failed to verify written result file.")
+            rec = GeneratedFile(
+                file_id=file_id,
+                filename=safe_name,
+                media_type=media_type,
+                size_bytes=target.stat().st_size,
+                task_id=task_id,
+                created_at=datetime.now(timezone.utc).isoformat(),
+                user_id=user_id,
+                tool_name=tool_name,
+                meta=copy.deepcopy(meta) if meta else {},
+            )
+            self._index[file_id] = rec
+            try:
+                self._save()
+            except Exception:
+                self._index.pop(file_id, None)
+                target.unlink(missing_ok=True)
+                raise
+            return copy.deepcopy(rec)
 
     def cleanup_older_than(self, max_age_seconds: float) -> int:
         """Delete result files older than ``max_age_seconds``. Returns count removed."""
-        now = datetime.now(timezone.utc)
-        removed = 0
-        for fid, rec in list(self._index.items()):
-            try:
-                created = datetime.fromisoformat(rec.created_at)
-            except ValueError:
-                continue
-            if (now - created).total_seconds() < max_age_seconds:
-                continue
-            path = self.absolute_path(fid)
-            if path and path.exists():
+        with self._lock:
+            now = datetime.now(timezone.utc)
+            removed = 0
+            for fid, rec in list(self._index.items()):
                 try:
-                    path.unlink()
-                except OSError:
-                    pass
-            del self._index[fid]
-            removed += 1
-        if removed:
-            self._save()
-        return removed
+                    created = datetime.fromisoformat(rec.created_at)
+                except ValueError:
+                    continue
+                if (now - created).total_seconds() < max_age_seconds:
+                    continue
+                path = self.absolute_path(fid)
+                if path and path.exists():
+                    try:
+                        path.unlink()
+                    except OSError:
+                        continue
+                del self._index[fid]
+                removed += 1
+            if removed:
+                self._save()
+            return removed
